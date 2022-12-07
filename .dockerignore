@@ -1,0 +1,17 @@
+_build
+.elixir_ls
+.gitlab
+cover
+deps
+docs
+tmp
+.dialyzer.ignore-warnings
+.dockerignore
+.DS_Store
+.env
+.gitignore
+.gitlab-ci.yml
+.tool-versions
+Dockerfile
+opslevel.yml
+values-prod-usw2-kubernetes.yaml
