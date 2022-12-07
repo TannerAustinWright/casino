@@ -16,7 +16,7 @@ defmodule CasinoWeb.UserSocket do
   # See `Phoenix.Token` documentation for examples in
   # performing token verification on connect.
   @impl true
-  def connect(%{"userId" => user_id}, socket, connect_info) do
+  def connect(%{"userId" => user_id}, socket, _connect_info) do
     {:ok, assign(socket, :user, %{id: user_id})}
   end
 

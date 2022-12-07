@@ -1,5 +1,4 @@
 defmodule BlackJack.Game do
-  @behaviour Access
 
   defstruct [
     :state,

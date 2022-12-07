@@ -9,19 +9,19 @@ defmodule CasinoWeb.GameChannel do
   end
 
   # broadcast!(socket, "out_server_socket", params)
-  def handle_in("place_bet", %{"ready" => ready, "wager" => wager}, socket) do
+  def handle_in("place_bet", %{"ready" => _ready, "wager" => _wager}, socket) do
     # user_id = socket.assigns.user.id
     # Casino.place_bet(user_id, wager, ready)
     {:noreply, socket}
   end
 
-  def handle_in("buy_insurance", %{"ready" => ready, "wager" => wager}, socket) do
+  def handle_in("buy_insurance", %{"ready" => _ready, "wager" => _wager}, socket) do
     # user_id = socket.assigns.user.id
     # Casino.buy_insurance(user_id, wager, ready)
     {:noreply, socket}
   end
 
-  def handle_in("split", %{"split" => split}, socket) do
+  def handle_in("split", %{"split" => _split}, socket) do
     # user_id = socket.assigns.user.id
     # Casino.split(user_id, split)
     {:noreply, socket}

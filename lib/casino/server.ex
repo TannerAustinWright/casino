@@ -26,29 +26,38 @@ defmodule Casino.Server do
     reply(player, Game.create_player(state, player))
   end
 
-  def handle_cast({:join, player_id}, state) do
+  def handle_cast({:join, _player_id}, state) do
+    broadcast(state)
+    state
   end
 
-  def handle_cast({:place_bet, player_id, wager, ready}, state) do
+  def handle_cast({:place_bet, _player_id, _wager, _ready}, state) do
+    state
   end
 
-  def handle_cast({:buy_insurance, player_id, wager, ready}, state) do
+  def handle_cast({:buy_insurance, _player_id, _wager, _ready}, state) do
+    state
   end
 
-  def handle_cast({:split, player_id, split}, state) do
+  def handle_cast({:split, _player_id, _split}, state) do
+    state
   end
 
-  def handle_cast({:hit, player_id}, state) do
+  def handle_cast({:hit, _player_id}, state) do
+    state
   end
 
-  def handle_cast({:stand, player_id}, state) do
+  def handle_cast({:stand, _player_id}, state) do
+    state
   end
 
-  def handle_cast({:double_down, player_id}, state) do
+  def handle_cast({:double_down, _player_id}, state) do
+    state
   end
 
-  def handle_cast({:surrender, player_id}, state) do
+  def handle_cast({:surrender, _player_id}, state) do
+    state
   end
 
-  defp broadcast(state), do: MyAppWeb.Endpoint.broadcast("game:lobby", "state_update", state)
+  defp broadcast(state), do: CasinoWeb.Endpoint.broadcast("game:lobby", "state_update", state)
 end
