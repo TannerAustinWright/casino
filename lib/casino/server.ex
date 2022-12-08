@@ -1,6 +1,9 @@
 defmodule Casino.Server do
   @moduledoc """
   The server layer for the casino module.
+
+    # "frank" |> Casino.create_player() |> Map.get(:id) |> Casino.join()
+
   """
   use Casino.GenServer
   require Logger
@@ -8,7 +11,6 @@ defmodule Casino.Server do
   alias BlackJack.{
     Game,
     Player,
-    Hand
   }
 
   def start_link(options \\ []),
@@ -16,97 +18,97 @@ defmodule Casino.Server do
 
   def init(_state), do: {:ok, Game.new!()}
 
-  def handle_call({:get_player, player_id}, _from, state) do
-    state
+  def handle_call({:get_player, player_id}, _from, game) do
+    game
     |> Game.get_player(player_id)
-    |> reply(state)
+    |> reply(game)
   end
 
-  def handle_call({:create_player, name}, _from, state) do
+  def handle_call({:create_player, name}, _from, game) do
     player = Player.new!(name: name)
 
-    reply(player, Game.create_player(state, player))
+    reply(player, Game.create_player(game, player))
   end
 
-  def handle_call(:get_state, _from, state) do
-    reply(state, state)
+  def handle_call(:get_state, _from, game) do
+    reply(game, game)
   end
 
-  def handle_cast(:clear_state, _state) do
+  def handle_cast(:clear_state, _game) do
     no_reply(Game.new!())
   end
 
-  def handle_cast({:join, player_id}, state) do
+  def handle_cast({:join, player_id}, game) do
     updated_player =
-      state.players[player_id]
+      game.players[player_id]
       |> Map.put(:joined, true)
 
-    updated_players = Map.put(state.players, player_id, updated_player)
-    state = if state.state === :idle, do: {}
-    state
+    updated_players = Map.put(game.players, player_id, updated_player)
+
+    {updated_game, timeout} =
+      if game.state === :idle,
+        do: {Map.put(game, :state, :taking_bets), seconds(5)},
+        else: {game, nil}
+
+    updated_game
     |> Map.put(:players, updated_players)
-    |> no_reply(fn
-      %{state: :idle} ->
-        seconds(30)
-      _other ->
-        nil
-    end)
+    |> no_reply(timeout)
   end
 
-  def handle_cast({:place_bet, player_id, wager, ready}, state = %{state: :taking_bets}) do
-    previous_wager = state.players[player_id].wager
+  def handle_cast({:place_bet, player_id, wager, ready}, game = %{state: :taking_bets}) do
+    previous_wager = game.players[player_id].wager
 
     updated_player =
-      state.players[player_id]
+      game.players[player_id]
       |> Map.put(:ready, ready)
       |> Map.update!(:credits, &(&1 + previous_wager - wager))
       |> Map.put(:wager, wager)
 
-    updated_players = Map.put(state.players, player_id, updated_player)
+    updated_players = Map.put(game.players, player_id, updated_player)
 
-    Map.put(state, :players, updated_players)
+    Map.put(game, :players, updated_players)
     |> no_reply()
   end
 
-  def handle_cast({:place_bet, _player_id, _wager, _ready}, state = %{state: game_state}) do
-    Logger.error("Unable to place bets while game is in #{game_state}")
-    no_reply(state)
+  def handle_cast({:place_bet, _player_id, _wager, _ready}, game = %{state: state}) do
+    Logger.error("Unable to place bets while game is in #{state}")
+    no_reply(game)
   end
 
-  def handle_cast({:buy_insurance, _player_id, _wager, _ready}, state) do
-    no_reply(state, nil)
+  def handle_cast({:buy_insurance, _player_id, _wager, _ready}, game) do
+    no_reply(game, nil)
   end
 
-  def handle_cast({:split, _player_id, _split}, state) do
-    state
+  def handle_cast({:split, _player_id, _split}, game) do
+    game
   end
 
-  def handle_cast({:hit, _player_id}, state) do
-    state
+  def handle_cast({:hit, _player_id}, game) do
+    game
   end
 
-  def handle_cast({:stand, _player_id}, state) do
-    state
+  def handle_cast({:stand, _player_id}, game) do
+    game
   end
 
-  def handle_cast({:double_down, _player_id}, state) do
-    state
+  def handle_cast({:double_down, _player_id}, game) do
+    game
   end
 
-  def handle_cast({:surrender, _player_id}, state) do
-    broadcast(state)
-    state
+  def handle_cast({:surrender, _player_id}, game) do
+    broadcast(game)
+    game
   end
 
   ###
   # handle info
   #
-  def handle_info(:timeout, state = %{state: :taking_bets}) do
-    state
-    |> Map.put(:state, :in_progress)
+  def handle_info(:timeout, game = %{state: :taking_bets}) do
+    game
+    |> Game.deal() #deal the dealer; check dekc length = (52 * 3) - 2; dont deal people with no wager
     |> no_reply()
-
+    |> IO.inspect(label: FromTimeout)
   end
 
-  defp broadcast(state), do: CasinoWeb.Endpoint.broadcast("game:lobby", "state_update", state)
+  defp broadcast(game), do: CasinoWeb.Endpoint.broadcast("game:lobby", "state_update", game)
 end

@@ -8,6 +8,7 @@ defmodule BlackJack.Player do
     :hands,
     :id,
     :wager,
+    :position,
   ]
 
   @defaults [
