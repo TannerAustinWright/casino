@@ -3,10 +3,12 @@ defmodule Casino.Server do
   The server layer for the casino module.
   """
   use Casino.GenServer
+  require Logger
 
   alias BlackJack.{
     Game,
-    Player
+    Player,
+    Hand
   }
 
   def start_link(options \\ []),
@@ -26,13 +28,43 @@ defmodule Casino.Server do
     reply(player, Game.create_player(state, player))
   end
 
-  def handle_cast({:join, _player_id}, state) do
-    broadcast(state)
-    state
+  def handle_call(:get_state, _from, state) do
+    reply(state, state)
   end
 
-  def handle_cast({:place_bet, _player_id, _wager, _ready}, state) do
-    state
+  def handle_cast(:clear_state, _state) do
+    no_reply(Game.new!())
+  end
+
+  def handle_cast({:join, player_id}, state) do
+    updated_player =
+      state.players[player_id]
+      |> Map.put(:joined, true)
+
+    updated_players = Map.put(state.players, player_id, updated_player)
+
+    Map.put(state, :players, updated_players)
+    |> no_reply()
+  end
+
+  def handle_cast({:place_bet, player_id, wager, ready}, state = %{state: :waiting}) do
+    previous_wager = state.players[player_id].wager
+
+    updated_player =
+      state.players[player_id]
+      |> Map.put(:ready, ready)
+      |> Map.update!(:credits, &(&1 + previous_wager - wager))
+      |> Map.put(:wager, wager)
+
+    updated_players = Map.put(state.players, player_id, updated_player)
+
+    Map.put(state, :players, updated_players)
+    |> no_reply()
+  end
+
+  def handle_cast({:place_bet, _player_id, _wager, _ready}, state = %{state: :in_progress}) do
+    Logger.error("Unable to place bets while game is in progress")
+    no_reply(state)
   end
 
   def handle_cast({:buy_insurance, _player_id, _wager, _ready}, state) do
@@ -56,6 +88,7 @@ defmodule Casino.Server do
   end
 
   def handle_cast({:surrender, _player_id}, state) do
+    broadcast(state)
     state
   end
 

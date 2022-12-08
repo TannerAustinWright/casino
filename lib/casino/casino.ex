@@ -10,6 +10,12 @@ defmodule Casino do
   def create_player(name),
     do: GenServer.call(Server, {:create_player, name})
 
+  def get_state(),
+    do: GenServer.call(Server, :get_state)
+
+  def clear_state(),
+    do: GenServer.cast(Server, :clear_state)
+
   def join(player_id),
     do: GenServer.cast(Server, {:join, player_id})
 

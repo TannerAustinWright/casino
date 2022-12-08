@@ -1,21 +1,11 @@
-defmodule BlackJack.Player do
+defmodule BlackJack.Hand do
   defstruct [
-    :name,
-    :joined,
-    :ready,
-    :credits,
-    :insurance,
-    :hands,
+    :cards,
     :id,
-    :wager,
   ]
 
   @defaults [
-    credits: 500,
-    wager: 0,
-    hands: %{},
-    joined: false,
-    ready: false,
+    cards: [],
   ]
 
   def new!(params \\ []) do
