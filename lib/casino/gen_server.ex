@@ -26,4 +26,7 @@ defmodule Casino.GenServer do
   def reply(response, state, timeout), do: {:reply, response, state, timeout}
 
   def stop_normal(response, state), do: {:stop, :normal, response, state}
+
+  def seconds(seconds), do: seconds * 1000
+
 end

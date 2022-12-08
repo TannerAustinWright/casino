@@ -1,5 +1,9 @@
 defmodule BlackJack.Game do
-
+@moduledoc """
+states:
+  idle  -   no players are in the server
+  taking_bets   -   players are in the server, timeout has been set to start game
+"""
   defstruct [
     :state,
     :minimum_wager,
@@ -10,7 +14,7 @@ defmodule BlackJack.Game do
   ]
 
   @defaults [
-    state: :waiting,
+    state: :idle,
     minimum_wager: 20,
     dealer_hand: [],
     players: %{}

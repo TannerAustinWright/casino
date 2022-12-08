@@ -42,12 +42,18 @@ defmodule Casino.Server do
       |> Map.put(:joined, true)
 
     updated_players = Map.put(state.players, player_id, updated_player)
-
-    Map.put(state, :players, updated_players)
-    |> no_reply()
+    state = if state.state === :idle, do: {}
+    state
+    |> Map.put(:players, updated_players)
+    |> no_reply(fn
+      %{state: :idle} ->
+        seconds(30)
+      _other ->
+        nil
+    end)
   end
 
-  def handle_cast({:place_bet, player_id, wager, ready}, state = %{state: :waiting}) do
+  def handle_cast({:place_bet, player_id, wager, ready}, state = %{state: :taking_bets}) do
     previous_wager = state.players[player_id].wager
 
     updated_player =
@@ -62,13 +68,13 @@ defmodule Casino.Server do
     |> no_reply()
   end
 
-  def handle_cast({:place_bet, _player_id, _wager, _ready}, state = %{state: :in_progress}) do
-    Logger.error("Unable to place bets while game is in progress")
+  def handle_cast({:place_bet, _player_id, _wager, _ready}, state = %{state: game_state}) do
+    Logger.error("Unable to place bets while game is in #{game_state}")
     no_reply(state)
   end
 
   def handle_cast({:buy_insurance, _player_id, _wager, _ready}, state) do
-    state
+    no_reply(state, nil)
   end
 
   def handle_cast({:split, _player_id, _split}, state) do
@@ -90,6 +96,16 @@ defmodule Casino.Server do
   def handle_cast({:surrender, _player_id}, state) do
     broadcast(state)
     state
+  end
+
+  ###
+  # handle info
+  #
+  def handle_info(:timeout, state = %{state: :taking_bets}) do
+    state
+    |> Map.put(:state, :in_progress)
+    |> no_reply()
+
   end
 
   defp broadcast(state), do: CasinoWeb.Endpoint.broadcast("game:lobby", "state_update", state)
