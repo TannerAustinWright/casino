@@ -5,7 +5,11 @@ defmodule BlackJack.Card do
     :face_down
   ]
 
+  @defaults [
+    face_down: false
+  ]
+
   def new!(params \\ []) do
-    struct!(__MODULE__,  params)
+    struct!(__MODULE__,  Keyword.merge(@defaults, params))
   end
 end

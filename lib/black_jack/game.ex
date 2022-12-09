@@ -10,6 +10,8 @@ defmodule BlackJack.Game do
     Hand
   }
 
+  @deck_count 1
+
   defstruct [
     :state,
     :minimum_wager,
@@ -27,7 +29,7 @@ defmodule BlackJack.Game do
     state: :idle,
     minimum_wager: 20,
     dealer_hand: [],
-    deck: Deck.new(3),
+    deck: Deck.new(@deck_count),
     discard: [],
     players: %{}
   ]
@@ -62,25 +64,36 @@ defmodule BlackJack.Game do
   def deal(game) do
     game_with_hands =
       game.players
-      |> Enum.reduce(Map.from_struct(game), fn {player_id, _player}, game ->
-        {hand, deck} = Hand.deal_two(game.deck)
+      |> Enum.reduce(Map.from_struct(game), fn
+        {_player_id, %{wager: 0}}, game ->
+          game
+        {player_id, _player}, game ->
+          {hand, deck} = Hand.deal_two(game.deck)
 
-        game
-        |> update_in([:players, player_id], fn player ->
-          Map.update!(player, :hands, &Map.put(&1, hand.id, hand))
-        end)
-        |> Map.put(:deck, deck)
+          game
+          |> update_in([:players, player_id], fn player ->
+            Map.update!(player, :hands, &Map.put(&1, hand.id, hand))
+          end)
+          |> Map.put(:deck, deck)
       end)
-      |> Game.new!()
       |> Map.put(:state, :in_progress)
-      |> Map.put(:active_player, elem(Enum.min_by(game.players, &(elem(&1, 1).position)), 0))
+      |> Map.put(:active_player, elem(Enum.min_by(game.players, &elem(&1, 1).position), 0))
       |> IO.inspect(label: GameWithHands)
 
+    {dealer_hand, deck} = Hand.deal_two(game_with_hands.deck, :dealer)
+
+    game_with_dealer =
+      game_with_hands
+      |> Map.put(:dealer_hand, dealer_hand)
+      |> Map.put(:deck, deck)
+
     first_hand_id =
-      game_with_hands.players[game_with_hands.active_player].hands
+      game_with_dealer.players[game_with_dealer.active_player].hands
       |> Map.keys()
       |> List.first()
 
-    Map.put(game_with_hands, :active_hand, first_hand_id)
+    game_with_dealer
+    |> Map.put(:active_hand, first_hand_id)
+    |> Game.new!()
   end
 end

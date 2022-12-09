@@ -2,7 +2,7 @@ defmodule Casino.Server do
   @moduledoc """
   The server layer for the casino module.
 
-    # "frank" |> Casino.create_player() |> Map.get(:id) |> Casino.join()
+    # id = "frank" |> Casino.create_player() |> Map.get(:id); Casino.join(id); Casino.place_bet(id, 100, true)
 
   """
   use Casino.GenServer
@@ -10,7 +10,7 @@ defmodule Casino.Server do
 
   alias BlackJack.{
     Game,
-    Player,
+    Player
   }
 
   def start_link(options \\ []),
@@ -105,9 +105,8 @@ defmodule Casino.Server do
   #
   def handle_info(:timeout, game = %{state: :taking_bets}) do
     game
-    |> Game.deal() #deal the dealer; check dekc length = (52 * 3) - 2; dont deal people with no wager
+    |> Game.deal()
     |> no_reply()
-    |> IO.inspect(label: FromTimeout)
   end
 
   defp broadcast(game), do: CasinoWeb.Endpoint.broadcast("game:lobby", "state_update", game)
