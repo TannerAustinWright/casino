@@ -27,4 +27,6 @@ defmodule BlackJack.Deck do
   @deck Enum.flat_map(@suits, fn suit -> Enum.map(@cards, fn card -> Card.new!(card: card, suit: suit) end)end)
 
   def new(number_of_decks), do: Enum.flat_map(1..number_of_decks, fn _num -> @deck end)
+
+  def draw(deck), do: List.pop_at(deck, Enum.random(1..length(deck)))
 end

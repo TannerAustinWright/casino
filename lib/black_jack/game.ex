@@ -68,7 +68,7 @@ defmodule BlackJack.Game do
         {_player_id, %{wager: 0}}, game ->
           game
         {player_id, _player}, game ->
-          {hand, deck} = Hand.deal_two(game.deck)
+          {hand, deck} = Hand.deal(game.deck)
 
           game
           |> update_in([:players, player_id], fn player ->
@@ -78,9 +78,8 @@ defmodule BlackJack.Game do
       end)
       |> Map.put(:state, :in_progress)
       |> Map.put(:active_player, elem(Enum.min_by(game.players, &elem(&1, 1).position), 0))
-      |> IO.inspect(label: GameWithHands)
 
-    {dealer_hand, deck} = Hand.deal_two(game_with_hands.deck, :dealer)
+    {dealer_hand, deck} = Hand.deal(game_with_hands.deck, :dealer)
 
     game_with_dealer =
       game_with_hands
@@ -95,5 +94,12 @@ defmodule BlackJack.Game do
     game_with_dealer
     |> Map.put(:active_hand, first_hand_id)
     |> Game.new!()
+  end
+
+  def hit(game) do
+    {deck, hand} = Deck.hit(game.deck, game.players[game.active_player].hands[game.active_hand])
+    # if total > 21 bust
+    # if total < 21 allow another hit
+    # if total == 21 stop them
   end
 end

@@ -2,7 +2,9 @@ defmodule Casino.Server do
   @moduledoc """
   The server layer for the casino module.
 
-    # id = "frank" |> Casino.create_player() |> Map.get(:id); Casino.join(id); Casino.place_bet(id, 100, true)
+    id = "frank" |> Casino.create_player() |> Map.get(:id)
+    Casino.join(id)
+    Casino.place_bet(id, 100, true)
 
   """
   use Casino.GenServer
@@ -47,12 +49,12 @@ defmodule Casino.Server do
 
     {updated_game, timeout} =
       if game.state === :idle,
-        do: {Map.put(game, :state, :taking_bets), seconds(5)},
+        do: {Map.put(game, :state, :taking_bets), 5},
         else: {game, nil}
 
     updated_game
     |> Map.put(:players, updated_players)
-    |> no_reply(timeout)
+    |> nr_and_queue_message(:start_game, count_down(timeout))
   end
 
   def handle_cast({:place_bet, player_id, wager, ready}, game = %{state: :taking_bets}) do
@@ -83,8 +85,13 @@ defmodule Casino.Server do
     game
   end
 
-  def handle_cast({:hit, _player_id}, game) do
-    game
+  def handle_cast({:hit, player_id}, game) when player_id === game.active_player do
+    no_reply Game.hit(game)
+  end
+
+  def handle_cast({:hit, player_id}, state) do
+    Logger.error("Player #{player_id} tried to hit when it was not their turn.")
+    no_reply(state)
   end
 
   def handle_cast({:stand, _player_id}, game) do
@@ -103,10 +110,36 @@ defmodule Casino.Server do
   ###
   # handle info
   #
-  def handle_info(:timeout, game = %{state: :taking_bets}) do
+  # def handle_info(:timeout, game = %{state: :taking_bets}) do
+  #   game
+  #   |> Game.deal()
+  #   |> no_reply()
+  # end
+
+  def handle_info(:start_game, game = %{state: :taking_bets}) do
     game
     |> Game.deal()
     |> no_reply()
+  end
+
+  def handle_info(_message, state) do
+    Logger.warn("Received unhandled info...")
+
+    no_reply(state)
+  end
+
+  def count_down(seconds) do
+    # Process.spawn(
+    #   fn ->
+    #     Enum.each(seconds..0, fn count ->
+    #       IO.inspect(count)
+    #       :timer.sleep(seconds(1))
+    #     end)
+    #   end,
+    #   [:monitor]
+    # )
+
+    seconds(seconds)
   end
 
   defp broadcast(game), do: CasinoWeb.Endpoint.broadcast("game:lobby", "state_update", game)

@@ -17,20 +17,35 @@ defmodule BlackJack.Hand do
     struct!(__MODULE__, Keyword.merge(@defaults, params))
   end
 
-  def deal_two(deck, dealer_or_player \\ :player)
+  def deal(deck, dealer_or_player \\ :player)
 
-  def deal_two(deck, :player) do
-    {first_card, after_one_pop} = List.pop_at(deck, Enum.random(1..length(deck)))
-    {second_card, new_deck} = List.pop_at(after_one_pop, Enum.random(1..length(after_one_pop)))
+  def deal(deck, :player) do
+    {first_card, after_one_pop} = Deck.draw(deck)
+    {second_card, new_deck} = Deck.draw(after_one_pop)
 
     {new!(cards: [first_card, second_card]), new_deck}
   end
 
-  def deal_two(deck, :dealer) do
-    {first_card, after_one_pop} = List.pop_at(deck, Enum.random(1..length(deck)))
-    {second_card, new_deck} = List.pop_at(after_one_pop, Enum.random(1..length(after_one_pop)))
+  def deal(deck, :dealer) do
+    {first_card, after_one_pop} = Deck.draw(deck)
+    {second_card, new_deck} = Deck.draw(after_one_pop)
     first_card_face_down = Map.put(first_card, :face_down, true)
 
     {new!(cards: [first_card_face_down, second_card]), new_deck}
   end
+
+  def hit(hand, deck) do
+    {card, new_deck} = Deck.draw(deck)
+
+    Map.update!(hand, :cards, &[card | &1])
+
+
+    # update total
+
+    {new_deck, new_hand}
+  end
+
+  def total(hand), do: Enum.reduce(hand, &get_value/2)
+
+
 end
