@@ -18,8 +18,11 @@ defmodule BlackJack.Player do
     joined: false,
     ready: false,
   ]
+  def new!(params \\ [])
 
-  def new!(params \\ []) do
+  def new!(params) when is_map(params), do: new!(Map.to_list(params))
+
+  def new!(params) do
     params =
       @defaults
       |> Keyword.merge(id: Ecto.UUID.generate())

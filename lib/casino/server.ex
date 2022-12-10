@@ -2,9 +2,12 @@ defmodule Casino.Server do
   @moduledoc """
   The server layer for the casino module.
 
-    id = "frank" |> Casino.create_player() |> Map.get(:id)
-    Casino.join(id)
-    Casino.place_bet(id, 100, true)
+    import Casino
+    id = "frank" |> create_player() |> Map.get(:id)
+    join(id)
+    place_bet(id, 100, true)
+    get_state()
+    place_bet(id, 100, true)
 
   """
   use Casino.GenServer
@@ -86,7 +89,7 @@ defmodule Casino.Server do
   end
 
   def handle_cast({:hit, player_id}, game) when player_id === game.active_player do
-    no_reply Game.hit(game)
+    no_reply Game.hit_player(game)
   end
 
   def handle_cast({:hit, player_id}, state) do
