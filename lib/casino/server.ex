@@ -3,13 +3,17 @@ defmodule Casino.Server do
   The server layer for the casino module.
 
     import Casino
-    id = "frank" |> create_player() |> Map.get(:id)
-    join(id)
-    place_bet(id, 100, true)
-    get_state()
-    place_bet(id, 100, true)
+    fid = "frank" |> create_player() |> Map.get(:id)
+    tid = "tanner" |> create_player() |> Map.get(:id)
+    join(tid)
+    join(fid)
+    place_bet(tid, 100, true)
+    place_bet(fid, 200, false)
+
+    BlackJack.Game.face_up get_state
 
   """
+  @betting_time_seconds 10
   use Casino.GenServer
   require Logger
 
@@ -44,20 +48,28 @@ defmodule Casino.Server do
   end
 
   def handle_cast({:join, player_id}, game) do
-    updated_player =
-      game.players[player_id]
-      |> Map.put(:joined, true)
+    update_in(game.start_game_scheduled_message, fn
+      nil ->
+        nil
 
-    updated_players = Map.put(game.players, player_id, updated_player)
+      scheduled_message ->
+        Process.cancel_timer(scheduled_message)
+    end)
 
-    {updated_game, timeout} =
-      if game.state === :idle,
-        do: {Map.put(game, :state, :taking_bets), 5},
-        else: {game, nil}
+    game_with_player = put_in(game.players[player_id].joined, true)
 
-    updated_game
-    |> Map.put(:players, updated_players)
-    |> nr_and_queue_message(:start_game, count_down(timeout))
+    update_in(game_with_player.state, fn
+      :idle ->
+        :taking_bets
+
+      other_state ->
+        other_state
+    end)
+    |> Map.put(
+      :start_game_scheduled_message,
+      send_message_after(seconds(@betting_time_seconds), :start_game)
+    )
+    |> no_reply()
   end
 
   def handle_cast({:place_bet, player_id, wager, ready}, game = %{state: :taking_bets}) do
@@ -89,16 +101,27 @@ defmodule Casino.Server do
   end
 
   def handle_cast({:hit, player_id}, game) when player_id === game.active_player do
-    no_reply Game.hit_player(game)
-  end
-
-  def handle_cast({:hit, player_id}, state) do
-    Logger.error("Player #{player_id} tried to hit when it was not their turn.")
-    no_reply(state)
-  end
-
-  def handle_cast({:stand, _player_id}, game) do
     game
+    |> Game.hit_player()
+    |> Game.play_dealer()
+    |> no_reply()
+  end
+
+  def handle_cast({:hit, player_id}, game) do
+    Logger.error("Player #{player_id} tried to hit when it was not their turn.")
+    no_reply(game)
+  end
+
+  def handle_cast({:stand, player_id}, game) when player_id === game.active_player do
+    game
+    |> Game.stand()
+    |> Game.play_dealer()
+    |> no_reply()
+  end
+
+  def handle_cast({:stand, player_id}, game) do
+    Logger.error("Player #{player_id} tried to stand when it was not their turn.")
+    no_reply(game)
   end
 
   def handle_cast({:double_down, _player_id}, game) do
@@ -120,9 +143,18 @@ defmodule Casino.Server do
   # end
 
   def handle_info(:start_game, game = %{state: :taking_bets}) do
-    game
-    |> Game.deal()
-    |> no_reply()
+    if Game.one_wager?(game) do
+      game
+      |> Game.deal()
+      |> no_reply()
+    else
+      Logger.warn(
+        "No players have placed bets. Starting #{@betting_time_seconds} second timer over."
+      )
+
+      send_message_after(seconds(@betting_time_seconds), :start_game)
+      no_reply(game)
+    end
   end
 
   def handle_info(_message, state) do
@@ -131,18 +163,18 @@ defmodule Casino.Server do
     no_reply(state)
   end
 
-  def count_down(seconds) do
-    # Process.spawn(
-    #   fn ->
-    #     Enum.each(seconds..0, fn count ->
-    #       IO.inspect(count)
-    #       :timer.sleep(seconds(1))
-    #     end)
-    #   end,
-    #   [:monitor]
-    # )
+  def count_down(ms) do
+    Process.spawn(
+      fn ->
+        Enum.each(div(ms, 1_000)..0, fn count ->
+          IO.inspect(count)
+          :timer.sleep(seconds(1))
+        end)
+      end,
+      [:monitor]
+    )
 
-    seconds(seconds)
+    ms
   end
 
   defp broadcast(game), do: CasinoWeb.Endpoint.broadcast("game:lobby", "state_update", game)

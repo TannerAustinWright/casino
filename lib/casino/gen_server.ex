@@ -1,5 +1,5 @@
 defmodule Casino.GenServer do
-  alias Plug.CSRFProtection.InvalidCrossOriginRequestError
+
   defmacro __using__(_opts) do
     quote do
       use GenServer
@@ -22,10 +22,9 @@ defmodule Casino.GenServer do
   def no_reply(state, nil), do: {:noreply, state}
   def no_reply(state, timeout), do: {:noreply, state, timeout}
 
-  defmacro nr_and_queue_message(state, message, timeout) do
-    quote bind_quoted: [state: state, message: message, timeout: timeout] do
+  defmacro send_message_after(timeout, message) do
+    quote bind_quoted: [message: message, timeout: timeout] do
       Process.send_after(__MODULE__, message, timeout)
-      no_reply(state)
     end
   end
 
@@ -35,6 +34,5 @@ defmodule Casino.GenServer do
 
   def stop_normal(response, state), do: {:stop, :normal, response, state}
 
-  def seconds(seconds), do: seconds * 1000
-
+  def seconds(seconds) when is_number(seconds), do: seconds * 1000
 end

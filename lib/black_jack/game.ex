@@ -22,7 +22,8 @@ defmodule BlackJack.Game do
     :players,
     :next_position,
     :deck,
-    :discard
+    :discard,
+    :start_game_scheduled_message
   ]
 
   @defaults [
@@ -100,7 +101,6 @@ defmodule BlackJack.Game do
     |> Game.new!()
   end
 
-  # dealer needs to play automatically
   # payout credits, clear wagers
   # update state taking_bets
   # discard dealer_hand
@@ -112,7 +112,7 @@ defmodule BlackJack.Game do
   # discard hands from player and dealer, reset player and dealer hands
   # get to game state waiting
 
-  def play_dealer(game) do
+  def play_dealer(game) when is_nil(game.active_player) do
     case game.dealer_hand.value do
       # dealer hits on soft 17
       [greater_value, _lesser_value] when greater_value <= 17 ->
@@ -127,49 +127,31 @@ defmodule BlackJack.Game do
     end
   end
 
+  def play_dealer(game), do: game
 
   def hit_dealer(game) do
     {new_deck, new_dealer_hand} = Hand.hit(game.deck, game.dealer_hand)
 
-    updated_game =
-      game
-      |> Map.put(:deck, new_deck)
-      |> Map.put(:dealer_hand, new_dealer_hand)
-      |> play_dealer()
+    game
+    |> Map.put(:deck, new_deck)
+    |> Map.put(:dealer_hand, new_dealer_hand)
+    |> play_dealer()
   end
 
   def hit_player(game) do
     {deck, hand} = Hand.hit(game.deck, game.players[game.active_player].hands[game.active_hand])
 
-    updated_game =
-      game
-      |> Map.put(:deck, deck)
+    game
+    |> Map.put(:deck, deck)
+    |> Map.from_struct()
+    |> update_in([:players, game.active_player], fn player ->
+      player
       |> Map.from_struct()
-      |> update_in([:players, game.active_player], fn player ->
-        player
-        |> Map.from_struct()
-        |> update_in([:hands, game.active_hand], fn _ -> hand end)
-        |> Player.new!()
-      end)
-      |> new!()
-
-    cond do
-      not hand.complete ->
-        updated_game
-
-      not is_nil(next_active_hand_id(game.players[game.active_player])) ->
-        Map.put(updated_game, :active_hand, next_active_hand_id(game.players[game.active_player]))
-
-      not is_nil(next_active_player_id(game.players)) ->
-        updated_game
-        |> Map.put(:active_player, next_active_player_id(game.players))
-        |> Map.put(:active_hand, next_active_hand_id(game.players[game.active_player]))
-
-      true ->
-        updated_game
-        |> Map.put(:active_player, nil)
-        |> Map.put(:active_hand, nil)
-    end
+      |> update_in([:hands, game.active_hand], fn _ -> hand end)
+      |> Player.new!()
+    end)
+    |> new!()
+    |> update_active_player()
   end
 
   def next_active_player_id(players) do
@@ -197,4 +179,56 @@ defmodule BlackJack.Game do
         hand_id
     end
   end
+
+  def stand(game) do
+    put_in(game.players[game.active_player].hands[game.active_hand].complete, true)
+    |> update_active_player()
+  end
+
+  def update_active_player(game) do
+    hand = game.players[game.active_player].hands[game.active_hand]
+
+    cond do
+      not hand.complete ->
+        game
+
+      not is_nil(next_active_hand_id(game.players[game.active_player])) ->
+        Map.put(
+          game,
+          :active_hand,
+          next_active_hand_id(game.players[game.active_player])
+        )
+
+      not is_nil(next_active_player_id(game.players)) ->
+        game_with_new_active_player =
+          Map.put(game, :active_player, next_active_player_id(game.players))
+
+        Map.put(
+          game_with_new_active_player,
+          :active_hand,
+          next_active_hand_id(
+            game_with_new_active_player.players[game_with_new_active_player.active_player]
+          )
+        )
+
+      true ->
+        game
+        |> Map.put(:active_player, nil)
+        |> Map.put(:active_hand, nil)
+    end
+  end
+
+  def face_up(game),
+    do:
+      Enum.each(game.dealer_hand.cards, fn
+        %{value: value, face_down: false} ->
+          IO.inspect(value)
+
+        _ ->
+          nil
+      end)
+
+  def one_wager?(game),
+    do:
+      Enum.any?(game.players, fn {_player_id, %{wager: wager}} -> wager >= game.minimum_wager end)
 end
