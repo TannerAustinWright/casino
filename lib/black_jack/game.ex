@@ -67,16 +67,24 @@ defmodule BlackJack.Game do
     game_with_hands =
       game.players
       |> Enum.reduce(Map.from_struct(game), fn
-        {_player_id, %{wager: 0}}, game ->
+        {_player_id, %{valid_wager: false}}, game ->
           game
 
         {player_id, _player}, game ->
           {hand, deck} = Hand.deal(game.deck)
 
-          game
-          |> update_in([:players, player_id], fn player ->
-            Map.update!(player, :hands, &Map.put(&1, hand.id, hand))
-          end)
+          initial_hand = Player.initial_hand(game.players[player_id])
+
+          put_in(
+            game.players[player_id].hands[initial_hand.id],
+            Hand.new!(
+              wager: initial_hand.wager,
+              id: initial_hand.id,
+              value: hand.value,
+              complete: hand.complete,
+              cards: hand.cards
+            )
+          )
           |> Map.put(:deck, deck)
       end)
       |> Map.put(:state, :in_progress)
@@ -101,16 +109,47 @@ defmodule BlackJack.Game do
     |> Game.new!()
   end
 
+  def payout_clear_wagers(game) do
+    Enum.each(game.players, fn
+      {_player_id, player} ->
+        Enum.each(player.hands, fn
+          {_hand_id, player_hand} ->
+            case Hand.beats?(player_hand, game.dealer_hand) do
+              # Player.update_player_credits(2*)
+              true -> nil
+              # do nothing
+              false -> nil
+              # update player credits to += wager
+              nil -> nil
+            end
+        end)
+    end)
+
+    # dealer_value = dealer value pattern match [nil] or [d_int] or [d_greatest_int, _d_lowest_int]
+    # for each player in active players
+    # for each hand in player
+    # hand_value = pattern match [nil] or [int] or [g_int, _l_int]
+    # case hand_value do
+    # [nil] -> add hand_value credits to house_credits
+    # [int] or [g_int, _l_int] ->
+    # [p_int] = [int] or [p_int, _other] = [g_int, _l_int] depending on pattern match?
+    # case dealer_value do
+    # [nil] or [d_int] < [p_int] or [d_greatest_int] < [p_int] -> add 2*hand_value to player credits, subtract hand_value from house_credits
+    # [d_int] == [p_int] or [d_greatest_int] == [p_int] -> add hand_value to player credits
+    # [d_int] > [p_int] or [d_greatest_int] > [p_int] -> add hand_value to house_credits
+  end
+
+  # update players function:
   # payout credits, clear wagers
-  # update state taking_bets
-  # discard dealer_hand
-  # set active_player and active_hand to nil
   # update each players ready to false
   # set insurance to nil
   # discard players hands, reset player hands to %{}
-  # if deck < 30% then, clear discard, reset deck
-  # discard hands from player and dealer, reset player and dealer hands
+
   # get to game state waiting
+  # set active_player and active_hand to nil
+  # discard dealer_hand
+  # update state taking_bets
+  # if deck < 30% then, clear discard, reset deck
 
   def play_dealer(game) when is_nil(game.active_player) do
     case game.dealer_hand.value do
@@ -180,7 +219,7 @@ defmodule BlackJack.Game do
     end
   end
 
-  def stand(game) do
+  def player_stand(game) do
     put_in(game.players[game.active_player].hands[game.active_hand].complete, true)
     |> update_active_player()
   end
@@ -227,11 +266,12 @@ defmodule BlackJack.Game do
 
       _ ->
         nil
-      end)
+    end)
 
     Enum.each(game.players, fn
       {_player_id, %{name: name, hands: hands}} ->
         IO.inspect("#{name}:")
+
         Enum.each(hands, fn {_hand_id, %{cards: cards}} ->
           Enum.each(cards, fn card -> IO.inspect(" - #{card.value}") end)
         end)
@@ -239,6 +279,5 @@ defmodule BlackJack.Game do
   end
 
   def one_wager?(game),
-    do:
-      Enum.any?(game.players, fn {_player_id, %{wager: wager}} -> wager >= game.minimum_wager end)
+    do: Enum.any?(game.players, &elem(&1, 1).valid_wager)
 end

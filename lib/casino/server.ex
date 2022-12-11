@@ -74,15 +74,19 @@ defmodule Casino.Server do
   end
 
   def handle_cast({:place_bet, player_id, wager, ready}, game = %{state: :taking_bets}) do
-    previous_wager = game.players[player_id].wager
+    previous_hand = Player.initial_hand(game.players[player_id])
+    previous_wager = previous_hand.wager
 
     updated_player =
       game.players[player_id]
       |> Map.put(:ready, ready)
       |> Map.update!(:credits, &(&1 + previous_wager - wager))
-      |> Map.put(:wager, wager)
+      |> Map.put(:valid_wager, wager >= game.minimum_wager)
 
-    updated_players = Map.put(game.players, player_id, updated_player)
+    modified_hand = put_in(previous_hand.wager, wager)
+    player_with_updated_wager = put_in(updated_player.hands, %{modified_hand.id => modified_hand})
+
+    updated_players = Map.put(game.players, player_id, player_with_updated_wager)
 
     Map.put(game, :players, updated_players)
     |> no_reply()
@@ -115,7 +119,7 @@ defmodule Casino.Server do
 
   def handle_cast({:stand, player_id}, game) when player_id === game.active_player do
     game
-    |> Game.stand()
+    |> Game.player_stand()
     |> Game.play_dealer()
     |> no_reply()
   end

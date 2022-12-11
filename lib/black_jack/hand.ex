@@ -8,7 +8,8 @@ defmodule BlackJack.Hand do
     :cards,
     :id,
     :value,
-    :complete
+    :complete,
+    :wager
   ]
 
   @defaults [
@@ -38,6 +39,7 @@ defmodule BlackJack.Hand do
     struct!(__MODULE__, Keyword.merge(@defaults, params_with_hand_value))
   end
 
+
   def deal(deck, dealer_or_player \\ :player)
 
   def deal(deck, :player) do
@@ -54,6 +56,26 @@ defmodule BlackJack.Hand do
 
     {new!(cards: [first_card_face_down, second_card]), new_deck}
   end
+
+  def beats?(%{value: [player_value | _player_rest]}, %{value: [dealer_value | _dealer_rest]}) do
+    cond do
+      dealer_value > player_value -> false
+      dealer_value < player_value -> true
+      dealer_value === player_value -> nil
+    end
+  end
+
+  def beats?(%{value: []}, %{value: _other}) do # function execute first
+    false
+  end
+
+  def beats?(%{value: _other}, %{value: []}) do # function execute second
+    true
+  end
+
+  def bust?(%{value: []}), do: true
+
+  def bust?(_hand), do: false
 
   def hit(deck, hand) do
     {card, new_deck} = Deck.draw(deck)

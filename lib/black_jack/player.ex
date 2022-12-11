@@ -7,16 +7,16 @@ defmodule BlackJack.Player do
     :insurance,
     :hands,
     :id,
-    :wager,
     :position,
+    :valid_wager
   ]
 
   @defaults [
     credits: 500,
-    wager: 0,
     hands: %{},
     joined: false,
     ready: false,
+    valid_wager: false
   ]
   def new!(params \\ [])
 
@@ -29,5 +29,23 @@ defmodule BlackJack.Player do
       |> Keyword.merge(params)
 
     struct!(__MODULE__, Keyword.merge(@defaults, params))
+  end
+
+  def update_player_credits(player, wager) do
+    Map.update!(player, :credits, &(&1 + wager))
+  end
+
+  def initial_hand(player) do
+
+    player.hands
+    |> Map.to_list()
+    |> List.first()
+    |> case do
+      nil ->
+        BlackJack.Hand.new!(wager: 0)
+
+      {_hand_id, hand} ->
+        hand
+    end
   end
 end
