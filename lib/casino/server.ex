@@ -3,6 +3,7 @@ defmodule Casino.Server do
   The server layer for the casino module.
 
     import Casino
+    import BlackJack.Game
     fid = "frank" |> create_player() |> Map.get(:id)
     tid = "tanner" |> create_player() |> Map.get(:id)
     join(tid)

@@ -218,15 +218,25 @@ defmodule BlackJack.Game do
     end
   end
 
-  def face_up(game),
-    do:
-      Enum.each(game.dealer_hand.cards, fn
-        %{value: value, face_down: false} ->
-          IO.inspect(value)
+  def print_cards(game) do
+    IO.inspect("Dealer:")
 
-        _ ->
-          nil
+    Enum.each(game.dealer_hand.cards, fn
+      %{value: value, face_down: false} ->
+        IO.inspect(" - #{value}")
+
+      _ ->
+        nil
       end)
+
+    Enum.each(game.players, fn
+      {_player_id, %{name: name, hands: hands}} ->
+        IO.inspect("#{name}:")
+        Enum.each(hands, fn {_hand_id, %{cards: cards}} ->
+          Enum.each(cards, fn card -> IO.inspect(" - #{card.value}") end)
+        end)
+    end)
+  end
 
   def one_wager?(game),
     do:
