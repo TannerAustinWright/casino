@@ -8,13 +8,12 @@ defmodule Casino.Server do
     tid = "tanner" |> create_player() |> Map.get(:id)
     join(tid)
     join(fid)
-    place_bet(tid, 100, true)
-    place_bet(fid, 200, false)
+    place_bet(tid, 250, true)
+    place_bet(fid, 500, false)
 
-    BlackJack.Game.face_up get_state
+   print_cards get_state
 
   """
-  @betting_time_seconds 10
   use Casino.GenServer
   require Logger
 
@@ -22,6 +21,8 @@ defmodule Casino.Server do
     Game,
     Player
   }
+
+  @betting_time_seconds 10
 
   def start_link(options \\ []),
     do: GenServer.start_link(__MODULE__, %{}, options)
@@ -109,6 +110,9 @@ defmodule Casino.Server do
     game
     |> Game.hit_player()
     |> Game.play_dealer()
+    |> Game.payout_clear_wagers(fn ->
+      send_message_after(seconds(@betting_time_seconds), :start_game)
+    end)
     |> no_reply()
   end
 
@@ -121,6 +125,9 @@ defmodule Casino.Server do
     game
     |> Game.player_stand()
     |> Game.play_dealer()
+    |> Game.payout_clear_wagers(fn ->
+      send_message_after(seconds(@betting_time_seconds), :start_game)
+    end)
     |> no_reply()
   end
 
@@ -138,17 +145,10 @@ defmodule Casino.Server do
     game
   end
 
-  ###
-  # handle info
-  #
-  # def handle_info(:timeout, game = %{state: :taking_bets}) do
-  #   game
-  #   |> Game.deal()
-  #   |> no_reply()
-  # end
-
   def handle_info(:start_game, game = %{state: :taking_bets}) do
     if Game.one_wager?(game) do
+      Logger.info("Game starting...")
+
       game
       |> Game.deal()
       |> no_reply()

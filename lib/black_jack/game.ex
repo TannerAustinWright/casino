@@ -30,7 +30,6 @@ defmodule BlackJack.Game do
     next_position: 0,
     state: :idle,
     minimum_wager: 20,
-    dealer_hand: [],
     deck: Deck.new(@deck_count),
     discard: [],
     players: %{}
@@ -109,46 +108,54 @@ defmodule BlackJack.Game do
     |> Game.new!()
   end
 
-  def payout_clear_wagers(game) do
-    Enum.each(game.players, fn
-      {_player_id, player} ->
-        Enum.each(player.hands, fn
-          {_hand_id, player_hand} ->
-            case Hand.beats?(player_hand, game.dealer_hand) do
-              # Player.update_player_credits(2*)
-              true -> nil
-              # do nothing
-              false -> nil
-              # update player credits to += wager
-              nil -> nil
-            end
-        end)
-    end)
+  def payout_clear_wagers(game, fun) when is_nil(game.active_player) do
+    new_state =
+      Enum.reduce(game.players, game, fn
+        {player_id, player = %{valid_wager: true}}, game ->
+          %{discard: discard_for_player, credits: new_credits} =
+            Enum.reduce(player.hands, %{discard: [], credits: 0}, fn
+              {_hand_id, player_hand}, acc ->
+                case Hand.beats?(player_hand, game.dealer_hand) do
+                  true ->
+                    acc
+                    |> Map.update!(:credits, &(&1 + player_hand.wager * 2))
+                    |> Map.update!(:discard, &(player_hand.cards ++ &1))
 
-    # dealer_value = dealer value pattern match [nil] or [d_int] or [d_greatest_int, _d_lowest_int]
-    # for each player in active players
-    # for each hand in player
-    # hand_value = pattern match [nil] or [int] or [g_int, _l_int]
-    # case hand_value do
-    # [nil] -> add hand_value credits to house_credits
-    # [int] or [g_int, _l_int] ->
-    # [p_int] = [int] or [p_int, _other] = [g_int, _l_int] depending on pattern match?
-    # case dealer_value do
-    # [nil] or [d_int] < [p_int] or [d_greatest_int] < [p_int] -> add 2*hand_value to player credits, subtract hand_value from house_credits
-    # [d_int] == [p_int] or [d_greatest_int] == [p_int] -> add hand_value to player credits
-    # [d_int] > [p_int] or [d_greatest_int] > [p_int] -> add hand_value to house_credits
+                  false ->
+                    Map.update!(acc, :discard, &(player_hand.cards ++ &1))
+
+                  nil ->
+                    acc
+                    |> Map.update!(:credits, &(&1 + player_hand.wager))
+                    |> Map.update!(:discard, &(player_hand.cards ++ &1))
+                end
+            end)
+
+          game_with_player_updated =
+            update_in(game.players[player_id], fn player ->
+              player
+              |> Map.put(:ready, false)
+              |> Map.update!(:credits, &(&1 + new_credits))
+              |> Map.put(:hands, %{})
+              |> Map.put(:insurance, nil)
+              |> Map.put(:valid_wager, false)
+            end)
+
+          update_in(game_with_player_updated.discard, &(discard_for_player ++ &1))
+
+        {_player_id, _player}, game ->
+          game
+      end)
+      |> Map.update!(:discard, &(game.dealer_hand.cards ++ &1))
+      |> Map.put(:dealer_hand, nil)
+      |> Map.put(:state, :taking_bets)
+
+    fun.()
+    new_state
   end
 
-  # update players function:
-  # payout credits, clear wagers
-  # update each players ready to false
-  # set insurance to nil
-  # discard players hands, reset player hands to %{}
+  def payout_clear_wagers(game, _fun), do: game
 
-  # get to game state waiting
-  # set active_player and active_hand to nil
-  # discard dealer_hand
-  # update state taking_bets
   # if deck < 30% then, clear discard, reset deck
 
   def play_dealer(game) when is_nil(game.active_player) do

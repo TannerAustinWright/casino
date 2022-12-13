@@ -1,32 +1,12 @@
 defmodule BlackJack.Deck do
   alias BlackJack.Card
 
-  @suits [
-    "spades",
-    "diamonds",
-    "clubs",
-    "hearts"
-  ]
+  @deck Enum.flat_map(Card.suits(), fn suit ->
+          Enum.map(Card.values(), fn value -> Card.new!(value: value, suit: suit) end)
+        end)
 
-  @cards [
-    "ace",
-    "2",
-    "3",
-    "4",
-    "5",
-    "6",
-    "7",
-    "8",
-    "9",
-    "10",
-    "jack",
-    "queen",
-    "king"
-  ]
+  def new(number_of_decks),
+    do: Enum.shuffle(Enum.flat_map(1..number_of_decks, fn _num -> @deck end))
 
-  @deck Enum.flat_map(@suits, fn suit -> Enum.map(@cards, fn value -> Card.new!(value: value, suit: suit) end) end)
-
-  def new(number_of_decks), do: Enum.flat_map(1..number_of_decks, fn _num -> @deck end)
-
-  def draw(deck), do: List.pop_at(deck, Enum.random(1..length(deck)))
+  def draw(deck), do: List.pop_at(deck, Enum.random(0..(length(deck) - 1)))
 end
