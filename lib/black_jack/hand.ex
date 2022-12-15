@@ -95,4 +95,18 @@ defmodule BlackJack.Hand do
 
     {new_deck, new_hand}
   end
+
+  def double_down(deck, hand) do
+    {card, new_deck} = Deck.draw(deck)
+
+    face_down_card = Map.put(card, :face_down, true)
+
+    new_hand =
+      hand
+      |> Map.update!(:cards, &[face_down_card | &1])
+      |> Map.update!(:value, &Card.add(&1, face_down_card))
+      |> Map.put(:complete, true)
+
+    {new_deck, new_hand}
+  end
 end

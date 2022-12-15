@@ -54,6 +54,7 @@ defmodule BlackJack.Card do
         sum = x + y
         if sum > 21, do: running_list, else: [sum | running_list]
     end
+    |> Enum.sort(:desc)
   end
 
   def add(card1, card2) do
@@ -62,6 +63,7 @@ defmodule BlackJack.Card do
         sum = x + y
         if sum > 21, do: running_list, else: [sum | running_list]
     end
+    |> Enum.sort(:desc)
   end
 
   def suits, do: @suits

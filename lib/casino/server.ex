@@ -6,10 +6,13 @@ defmodule Casino.Server do
     import BlackJack.Game
     fid = "frank" |> create_player() |> Map.get(:id)
     tid = "tanner" |> create_player() |> Map.get(:id)
+    vid = "talin" |> create_player() |> Map.get(:id)
     join(tid)
     join(fid)
-    bet(tid, 250)
-    bet(fid, 500)
+    join(vid)
+    bet(vid, whatever)
+    bet(tid, 20)
+    bet(fid, 100)
 
    print_cards get_state
 
@@ -75,7 +78,7 @@ defmodule Casino.Server do
     # game
     # |> Map.update(:timer, nil, & Process.cancel_timer(&1))
     # |> Game.player_joined(player_id)
-    # |> Map.put(:timeout, send_after(seconds: @betting_time_seconds, :start_game))
+    # |> Map.put(:timeout, send_after(seconds: @betting_time_seconds, :timeout))
     # |> broadcast()
     # |> no_reply()
 
@@ -111,9 +114,10 @@ defmodule Casino.Server do
     game
     |> Game.hit_player()
     |> Game.play_dealer()
-    |> Game.payout_clear_wagers(fn ->
-      send_after(seconds(@betting_time_seconds), :start_game)
+    |> Game.payout(fn ->
+      send_after(seconds(@betting_time_seconds), :timeout)
     end)
+    |> broadcast()
     |> no_reply()
   end
 
@@ -126,9 +130,10 @@ defmodule Casino.Server do
     game
     |> Game.player_stand()
     |> Game.play_dealer()
-    |> Game.payout_clear_wagers(fn ->
-      send_after(seconds(@betting_time_seconds), :start_game)
+    |> Game.payout(fn ->
+      send_after(seconds(@betting_time_seconds), :timeout)
     end)
+    |> broadcast()
     |> no_reply()
   end
 
@@ -137,8 +142,15 @@ defmodule Casino.Server do
     no_reply(game)
   end
 
-  def handle_cast({:double_down, _player_id}, game) do
+  def handle_cast({:double_down, player_id}, game) when player_id === game.active_player do
     game
+    |> Game.double_down()
+    |> Game.play_dealer()
+    |> Game.payout(fn ->
+      send_after(seconds(@betting_time_seconds), :timeout)
+    end)
+    |> broadcast()
+    |> no_reply()
   end
 
   def handle_cast({:split, _player_id, _split}, game) do
@@ -192,6 +204,16 @@ defmodule Casino.Server do
   # Timer Handlers
   #
 
+  def handle_info(:timeout, game) when game.state === :shuffling do
+    game
+    |> Game.clear_table(fn ->
+      send_after(seconds(@betting_time_seconds), :timeout)
+    end)
+    |> broadcast()
+    |> no_reply()
+
+  end
+
   def handle_info(:timeout, game) when game.state in [:taking_bets, :insurance] do
     # game
     # |> Game.handle_timeout()
@@ -203,6 +225,7 @@ defmodule Casino.Server do
 
       game
       |> Game.deal()
+      |> broadcast()
       |> no_reply()
     else
       Logger.warn(
@@ -222,16 +245,7 @@ defmodule Casino.Server do
   end
 
   # defp broadcast(game), do: CasinoWeb.Endpoint.broadcast("game:lobby", "state_update", game)
-  def broadcast(game) do
-    keys_to_remove = [
-      :deck,
-      :discard
-    ]
-
-    IO.inspect(Map.drop(game, keys_to_remove))
-
-    game
-  end
+  def broadcast(game), do: BlackJack.Game.show(game)
 
   ###
   # utility
