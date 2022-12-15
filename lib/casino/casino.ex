@@ -19,8 +19,8 @@ defmodule Casino do
   def join(player_id),
     do: GenServer.cast(Server, {:join, player_id})
 
-  def place_bet(player_id, wager, ready),
-    do: GenServer.cast(Server, {:place_bet, player_id, wager, ready})
+  def bet(player_id, wager),
+    do: GenServer.cast(Server, {:bet, player_id, wager})
 
   def buy_insurance(player_id, wager, ready),
     do: GenServer.cast(Server, {:buy_insurance, player_id, wager, ready})

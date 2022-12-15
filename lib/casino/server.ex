@@ -8,8 +8,8 @@ defmodule Casino.Server do
     tid = "tanner" |> create_player() |> Map.get(:id)
     join(tid)
     join(fid)
-    place_bet(tid, 250, true)
-    place_bet(fid, 500, false)
+    bet(tid, 250)
+    bet(fid, 500)
 
    print_cards get_state
 
@@ -29,6 +29,10 @@ defmodule Casino.Server do
 
   def init(_state), do: {:ok, Game.new!()}
 
+  ###
+  # Stateless Actions
+  #
+
   def handle_call({:get_player, player_id}, _from, game) do
     game
     |> Game.get_player(player_id)
@@ -38,7 +42,12 @@ defmodule Casino.Server do
   def handle_call({:create_player, name}, _from, game) do
     player = Player.new!(name: name)
 
-    reply(player, Game.create_player(game, player))
+    game_with_player =
+      game
+      |> Game.add_player(player)
+      |> broadcast()
+
+    reply(player, game_with_player)
   end
 
   def handle_call(:get_state, _from, game) do
@@ -46,11 +55,31 @@ defmodule Casino.Server do
   end
 
   def handle_cast(:clear_state, _game) do
-    no_reply(Game.new!())
+    Game.new!()
+    |> broadcast()
+    |> no_reply()
   end
 
-  def handle_cast({:join, player_id}, game) do
-    update_in(game.start_game_scheduled_message, fn
+  # def handle_cast({:join, player_id}, game) when game.state !== :idle do
+  #   game
+  #   |> Game.player_joined(player_id)
+  #   |> broadcast()
+  #   |> no_reply()
+  # end
+
+  ###
+  # Idle
+  #
+
+  def handle_cast({:join, player_id}, game) when game.state in [:idle, :taking_bets] do
+    # game
+    # |> Map.update(:timer, nil, & Process.cancel_timer(&1))
+    # |> Game.player_joined(player_id)
+    # |> Map.put(:timeout, send_after(seconds: @betting_time_seconds, :start_game))
+    # |> broadcast()
+    # |> no_reply()
+
+    Map.update!(game, :timeout, fn
       nil ->
         nil
 
@@ -68,50 +97,22 @@ defmodule Casino.Server do
         other_state
     end)
     |> Map.put(
-      :start_game_scheduled_message,
-      send_message_after(seconds(@betting_time_seconds), :start_game)
+      :timeout,
+      send_after(seconds(@betting_time_seconds), :timeout)
     )
     |> no_reply()
   end
 
-  def handle_cast({:place_bet, player_id, wager, ready}, game = %{state: :taking_bets}) do
-    previous_hand = Player.initial_hand(game.players[player_id])
-    previous_wager = previous_hand.wager
-
-    updated_player =
-      game.players[player_id]
-      |> Map.put(:ready, ready)
-      |> Map.update!(:credits, &(&1 + previous_wager - wager))
-      |> Map.put(:valid_wager, wager >= game.minimum_wager)
-
-    modified_hand = put_in(previous_hand.wager, wager)
-    player_with_updated_wager = put_in(updated_player.hands, %{modified_hand.id => modified_hand})
-
-    updated_players = Map.put(game.players, player_id, player_with_updated_wager)
-
-    Map.put(game, :players, updated_players)
-    |> no_reply()
-  end
-
-  def handle_cast({:place_bet, _player_id, _wager, _ready}, game = %{state: state}) do
-    Logger.error("Unable to place bets while game is in #{state}")
-    no_reply(game)
-  end
-
-  def handle_cast({:buy_insurance, _player_id, _wager, _ready}, game) do
-    no_reply(game, nil)
-  end
-
-  def handle_cast({:split, _player_id, _split}, game) do
-    game
-  end
+  ###
+  # In Progress
+  #
 
   def handle_cast({:hit, player_id}, game) when player_id === game.active_player do
     game
     |> Game.hit_player()
     |> Game.play_dealer()
     |> Game.payout_clear_wagers(fn ->
-      send_message_after(seconds(@betting_time_seconds), :start_game)
+      send_after(seconds(@betting_time_seconds), :start_game)
     end)
     |> no_reply()
   end
@@ -126,7 +127,7 @@ defmodule Casino.Server do
     |> Game.player_stand()
     |> Game.play_dealer()
     |> Game.payout_clear_wagers(fn ->
-      send_message_after(seconds(@betting_time_seconds), :start_game)
+      send_after(seconds(@betting_time_seconds), :start_game)
     end)
     |> no_reply()
   end
@@ -140,12 +141,63 @@ defmodule Casino.Server do
     game
   end
 
-  def handle_cast({:surrender, _player_id}, game) do
-    broadcast(game)
+  def handle_cast({:split, _player_id, _split}, game) do
     game
   end
 
-  def handle_info(:start_game, game = %{state: :taking_bets}) do
+  ###
+  # Multi-State Handlers
+  #
+
+  def handle_cast({:bet, player_id, wager}, game) when game.state in [:taking_bets, :insurance] do
+    # game
+    # |> Game.update_wager(player_id, wager)
+    # |> broadcast()
+    # |> no_reply()
+
+    previous_hand = Player.initial_hand(game.players[player_id])
+    previous_wager = previous_hand.wager
+
+    updated_player =
+      game.players[player_id]
+      |> Map.update!(:credits, &(&1 + previous_wager - wager))
+      |> Map.put(:valid_wager, wager >= game.minimum_wager)
+
+    modified_hand = put_in(previous_hand.wager, wager)
+    player_with_updated_wager = put_in(updated_player.hands, %{modified_hand.id => modified_hand})
+
+    updated_players = Map.put(game.players, player_id, player_with_updated_wager)
+
+    Map.put(game, :players, updated_players)
+    |> no_reply()
+  end
+
+  def handle_cast({:set_ready, player_id, ready}, game) when game.state in [:taking_bets, :insurance] do
+    game
+    |> Game.set_player_ready(player_id, ready)
+    |> broadcast()
+    |> no_reply()
+  end
+
+  # catch all
+  def handle_cast(cast_tuple, game) do
+    Logger.error(
+      "Unable to complete action '#{elem(cast_tuple, 0)}' while game is in state '#{game.state}'"
+    )
+
+    no_reply(game)
+  end
+
+  ###
+  # Timer Handlers
+  #
+
+  def handle_info(:timeout, game) when game.state in [:taking_bets, :insurance] do
+    # game
+    # |> Game.handle_timeout()
+    # |> broadcast()
+    # |> no_reply()
+
     if Game.one_wager?(game) do
       Logger.info("Game starting...")
 
@@ -157,16 +209,33 @@ defmodule Casino.Server do
         "No players have placed bets. Starting #{@betting_time_seconds} second timer over."
       )
 
-      send_message_after(seconds(@betting_time_seconds), :start_game)
+      send_after(seconds(@betting_time_seconds), :timeout)
       no_reply(game)
     end
   end
 
-  def handle_info(_message, state) do
-    Logger.warn("Received unhandled info...")
+  # catch all
+  def handle_info(message, state) do
+    Logger.warn("Received unhandled info: #{message}")
 
     no_reply(state)
   end
+
+  # defp broadcast(game), do: CasinoWeb.Endpoint.broadcast("game:lobby", "state_update", game)
+  def broadcast(game) do
+    keys_to_remove = [
+      :deck,
+      :discard
+    ]
+
+    IO.inspect(Map.drop(game, keys_to_remove))
+
+    game
+  end
+
+  ###
+  # utility
+  #
 
   def count_down(ms) do
     Process.spawn(
@@ -181,6 +250,4 @@ defmodule Casino.Server do
 
     ms
   end
-
-  defp broadcast(game), do: CasinoWeb.Endpoint.broadcast("game:lobby", "state_update", game)
 end

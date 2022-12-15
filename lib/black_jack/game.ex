@@ -11,8 +11,6 @@ defmodule BlackJack.Game do
     Player
   }
 
-  @deck_count 1
-
   defstruct [
     :state,
     :minimum_wager,
@@ -23,8 +21,29 @@ defmodule BlackJack.Game do
     :next_position,
     :deck,
     :discard,
-    :start_game_scheduled_message
+    :timeout
   ]
+
+  @deck_count 1
+
+  # @betting_states [
+  #   :taking_bets,
+  #   :insurance
+  # ]
+
+  # @timed_states [
+  #   :taking_bets,
+  #   :insurance,
+  #   :shuffling
+  # ]
+
+  # @states [
+  #   :idle,
+  #   :taking_bets,
+  #   :insurance,
+  #   :in_progress,
+  #   :shuffling
+  # ]
 
   @defaults [
     next_position: 0,
@@ -34,6 +53,7 @@ defmodule BlackJack.Game do
     discard: [],
     players: %{}
   ]
+
   def new!(params \\ [])
 
   def new!(params) when is_list(params) do
@@ -48,7 +68,7 @@ defmodule BlackJack.Game do
     game.players[player_id]
   end
 
-  def create_player(game, player) do
+  def add_player(game, player) do
     game
     |> Map.from_struct()
     |> update_in([:players, player.id], fn
@@ -60,6 +80,10 @@ defmodule BlackJack.Game do
     end)
     |> Map.update!(:next_position, &(&1 + 1))
     |> new!()
+  end
+
+  def set_player_ready(game, _player_id, _ready) do
+    game
   end
 
   def deal(game) do

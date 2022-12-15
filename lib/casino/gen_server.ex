@@ -22,7 +22,7 @@ defmodule Casino.GenServer do
   def no_reply(state, nil), do: {:noreply, state}
   def no_reply(state, timeout), do: {:noreply, state, timeout}
 
-  defmacro send_message_after(timeout, message) do
+  defmacro send_after(timeout, message) do
     quote bind_quoted: [message: message, timeout: timeout] do
       Process.send_after(__MODULE__, message, timeout)
     end
