@@ -4,14 +4,16 @@ defmodule Casino.Server do
 
     import Casino
     import BlackJack.Game
-    fid = "frank" |> create_player() |> Map.get(:id)
     tid = "tanner" |> create_player() |> Map.get(:id)
-    vid = "talin" |> create_player() |> Map.get(:id)
     join(tid)
-    join(fid)
-    join(vid)
-    bet(fid, 100)
     bet(tid, 20)
+    buy_insurance(tid, true)
+
+    fid = "frank" |> create_player() |> Map.get(:id)
+    join(fid)
+    bet(fid, 100)
+    vid = "talin" |> create_player() |> Map.get(:id)
+    join(vid)
     bet(vid, 200)
 
 
@@ -175,7 +177,7 @@ defmodule Casino.Server do
   # Multi-State Handlers
   #
 
-  def handle_cast({:bet, player_id, wager}, game) when game.state in [:taking_bets, :insurance] do
+  def handle_cast({:bet, player_id, wager}, game) when game.state === :taking_bets do
     # game
     # |> Game.update_wager(player_id, wager)
     # |> broadcast()
@@ -195,6 +197,13 @@ defmodule Casino.Server do
     updated_players = Map.put(game.players, player_id, player_with_updated_wager)
 
     Map.put(game, :players, updated_players)
+    |> no_reply()
+  end
+
+  def handle_cast({:buy_insurance, player_id, wants_insurance}, game) when game.state === :insurance do
+    game
+    |> Game.bet_insurance(player_id, wants_insurance)
+    |> broadcast()
     |> no_reply()
   end
 

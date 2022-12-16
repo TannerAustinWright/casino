@@ -39,7 +39,6 @@ defmodule BlackJack.Hand do
     struct!(__MODULE__, Keyword.merge(@defaults, params_with_hand_value))
   end
 
-
   def deal(deck, dealer_or_player \\ :player)
 
   def deal(deck, :player) do
@@ -57,25 +56,38 @@ defmodule BlackJack.Hand do
     {new!(cards: [first_card_face_down, second_card]), new_deck}
   end
 
-  def beats?(%{value: [player_value | _player_rest]}, %{value: [dealer_value | _dealer_rest]}) do
+  def beats?(%{value: [player_value | _player_rest]}, %{
+        cards: dealer_cards,
+        value: [dealer_value | _dealer_rest]
+      }) do
     cond do
+      # dealer has blackjack everyone looses
+      length(dealer_cards) === 2 and dealer_value === 21 -> false
+      # dealer beats player
       dealer_value > player_value -> false
+      # player beats dealer
       dealer_value < player_value -> true
+      # push
       dealer_value === player_value -> nil
     end
   end
 
-  def beats?(%{value: []}, %{value: _other}) do # function execute first
+  # function execute first
+  def beats?(%{value: []}, %{value: _other}) do
     false
   end
 
-  def beats?(%{value: _other}, %{value: []}) do # function execute second
+  # function execute second
+  def beats?(%{value: _other}, %{value: []}) do
     true
   end
 
   def bust?(%{value: []}), do: true
 
   def bust?(_hand), do: false
+
+  def black_jack?(%{value: [21 | _rest], cards: cards}) when length(cards) === 2, do: true
+  def black_jack?(_hand), do: false
 
   def hit(deck, hand) do
     {card, new_deck} = Deck.draw(deck)
@@ -87,8 +99,10 @@ defmodule BlackJack.Hand do
       |> case do
         busted_hand = %{value: []} ->
           Map.put(busted_hand, :complete, true)
+
         max_hand = %{value: [21 | _other]} ->
           Map.put(max_hand, :complete, true)
+
         other_hand ->
           other_hand
       end

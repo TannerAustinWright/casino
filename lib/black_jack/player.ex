@@ -16,7 +16,8 @@ defmodule BlackJack.Player do
     hands: %{},
     joined: false,
     ready: false,
-    valid_wager: false
+    valid_wager: false,
+    insurance: false
   ]
   def new!(params \\ [])
 
@@ -36,7 +37,6 @@ defmodule BlackJack.Player do
   end
 
   def initial_hand(player) do
-
     player.hands
     |> Map.to_list()
     |> List.first()

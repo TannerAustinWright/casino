@@ -71,9 +71,7 @@ defmodule BlackJack.Game do
   end
 
   def add_player(game, player) do
-    game
-    |> Map.from_struct()
-    |> update_in([:players, player.id], fn
+    update_in(game.players[player.id], fn
       nil ->
         Map.put(player, :position, game.next_position)
 
@@ -81,7 +79,6 @@ defmodule BlackJack.Game do
         other
     end)
     |> Map.update!(:next_position, &(&1 + 1))
-    |> new!()
   end
 
   def set_player_ready(game, _player_id, _ready) do
@@ -91,7 +88,7 @@ defmodule BlackJack.Game do
   def deal(game, fun) do
     game_with_hands =
       game.players
-      |> Enum.reduce(Map.from_struct(game), fn
+      |> Enum.reduce(game, fn
         {_player_id, %{valid_wager: false}}, game ->
           game
 
@@ -124,22 +121,26 @@ defmodule BlackJack.Game do
   end
 
   def handle_insurance(game, fun) do
-    IO.inspect(game.dealer_hand)
-    IO.inspect(game.state)
-
     case game do
+      # dealer has blackjack without insurance
       %{dealer_hand: %{cards: [%{value: "ace"}, %{value: value}]}, state: :taking_bets}
       when value in @ten_values ->
         payout(game, fun)
 
-      %{dealer_hand: %{cards: [_face_down, %{face_down: false, value: "ace"}]}, state: :taking_bets} ->
+      # dealer is showing ace so go to insurance
+      %{
+        dealer_hand: %{cards: [_face_down, %{face_down: false, value: "ace"}]},
+        state: :taking_bets
+      } ->
         fun.()
         Map.put(game, :state, :insurance)
 
+      # insurance has been collected and the dealer has blackjack
       %{dealer_hand: %{cards: [%{value: value}, %{value: "ace"}]}, state: :insurance}
       when value in @ten_values ->
         payout(game, fun)
 
+      # insurance may have been collected, and the dealer does not have blackjack
       %{state: state} when state in [:taking_bets, :insurance] ->
         game_with_active_player =
           Map.put(
@@ -160,6 +161,27 @@ defmodule BlackJack.Game do
     end
   end
 
+  def bet_insurance(game, player_id, wants_insurance) do
+    [{_hand_id, hand}] = Map.to_list(game.players[player_id].hands)
+
+    put_in(game.players[player_id], fn player ->
+      player
+      |> Map.put(:insurance, wants_insurance)
+      |> Map.update!(:credits, fn credits ->
+        cond do
+          wants_insurance and not player.insurance ->
+            credits - hand.wager / 2
+
+          not wants_insurance and player.insurance ->
+            credits + hand.wager / 2
+
+          true ->
+            credits
+        end
+      end)
+    end)
+  end
+
   def payout(game, fun) when is_nil(game.active_player) do
     new_state =
       Enum.reduce(game.players, game, fn
@@ -168,19 +190,29 @@ defmodule BlackJack.Game do
             Enum.reduce(player.hands, %{discard: [], credits: 0, hands: player.hands}, fn
               {hand_id, player_hand}, acc ->
                 case Hand.beats?(player_hand, game.dealer_hand) do
+                  # player beat dealer
                   true ->
                     acc
                     |> Map.update!(:credits, &(&1 + player_hand.wager * 2))
                     |> Map.update!(:discard, &(player_hand.cards ++ &1))
 
+                  # player lost
                   false ->
                     Map.update!(acc, :discard, &(player_hand.cards ++ &1))
 
+                  # push
                   nil ->
                     acc
                     |> Map.update!(:credits, &(&1 + player_hand.wager))
                     |> Map.update!(:discard, &(player_hand.cards ++ &1))
                 end
+                |> Map.update!(:credits, fn credits ->
+                  insurance_payout = if player.insurance, do: 2 * player_hand.wager, else: 0
+
+                  if Hand.black_jack?(game.dealer_hand),
+                    do: credits + insurance_payout,
+                    else: credits
+                end)
                 |> Map.update!(:hands, fn hands ->
                   face_up_hand =
                     update_in(player_hand.cards, fn cards ->
@@ -196,6 +228,7 @@ defmodule BlackJack.Game do
               player
               |> Map.update!(:credits, &(&1 + new_credits))
               |> Map.put(:hands, face_up_hands)
+              |> Map.put(:insurance, false)
             end)
 
           update_in(game_with_player_updated.discard, &(discard_for_player ++ &1))
@@ -220,7 +253,7 @@ defmodule BlackJack.Game do
   def clear_table(game, fun) when is_nil(game.active_player) do
     new_state =
       Enum.reduce(game.players, game, fn
-        {player_id, player = %{valid_wager: true}}, game ->
+        {player_id, %{valid_wager: true}}, game ->
           update_in(game.players[player_id], fn player ->
             player
             |> Map.put(:ready, false)
@@ -240,8 +273,8 @@ defmodule BlackJack.Game do
   end
 
   # if deck < 30% then, clear discard, reset deck
-  # change it so that if dealer has 21 at start of game go to next game (needs to be checked when dealer is showing 10, j, q, k, a. Inusrance options available on ace)
   # blackjack doesnt immediately pay out and it should pay out 1.5x bet
+  # allow betting insurance and pay it out if the dealer has blackjack
 
   def play_dealer(game) when is_nil(game.active_player) do
     case game.dealer_hand.value do
@@ -265,19 +298,15 @@ defmodule BlackJack.Game do
     old_hand = game.players[game.active_player].hands[game.active_hand]
     {deck, hand} = Hand.double_down(old_deck, old_hand)
 
-    game
-    |> Map.put(:deck, deck)
-    |> Map.from_struct()
-    |> update_in([:players, game.active_player], fn player ->
-      player
-      |> Map.from_struct()
-      |> Map.update!(:credits, &(&1 - hand.wager))
-      |> update_in([:hands, game.active_hand], fn _ ->
+    game_with_deck = Map.put(game, :deck, deck)
+
+    update_in(game_with_deck.players[game.active_player], fn player ->
+      player_with_credits = Map.put(player, :credits, &(&1 - hand.wager))
+
+      update_in(player_with_credits.hands[game.active_hand], fn _ ->
         Map.put(hand, :wager, hand.wager * 2)
       end)
-      |> Player.new!()
     end)
-    |> new!()
     |> update_active_player()
   end
 
@@ -293,16 +322,9 @@ defmodule BlackJack.Game do
   def hit_player(game) do
     {deck, hand} = Hand.hit(game.deck, game.players[game.active_player].hands[game.active_hand])
 
-    game
-    |> Map.put(:deck, deck)
-    |> Map.from_struct()
-    |> update_in([:players, game.active_player], fn player ->
-      player
-      |> Map.from_struct()
-      |> update_in([:hands, game.active_hand], fn _ -> hand end)
-      |> Player.new!()
-    end)
-    |> new!()
+    game_with_deck = Map.put(game, :deck, deck)
+
+    put_in(game.players[game.active_player].hands[game.active_hand], hand)
     |> update_active_player()
   end
 
