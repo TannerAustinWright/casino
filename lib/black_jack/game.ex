@@ -157,14 +157,13 @@ defmodule BlackJack.Game do
         game_with_active_player
         |> Map.put(:active_hand, first_hand_id)
         |> Map.put(:state, :in_progress)
-        |> Game.new!()
     end
   end
 
   def bet_insurance(game, player_id, wants_insurance) do
     [{_hand_id, hand}] = Map.to_list(game.players[player_id].hands)
 
-    put_in(game.players[player_id], fn player ->
+    update_in(game.players[player_id], fn player ->
       player
       |> Map.put(:insurance, wants_insurance)
       |> Map.update!(:credits, fn credits ->
@@ -213,6 +212,7 @@ defmodule BlackJack.Game do
                     do: credits + insurance_payout,
                     else: credits
                 end)
+                |> IO.inspect(label: SUCKMYCOCK)
                 |> Map.update!(:hands, fn hands ->
                   face_up_hand =
                     update_in(player_hand.cards, fn cards ->
@@ -246,6 +246,7 @@ defmodule BlackJack.Game do
 
     fun.()
     new_state
+    |> IO.inspect()
   end
 
   def payout(game, _fun), do: game
@@ -258,7 +259,7 @@ defmodule BlackJack.Game do
             player
             |> Map.put(:ready, false)
             |> Map.put(:hands, %{})
-            |> Map.put(:insurance, nil)
+            |> Map.put(:insurance, false)
             |> Map.put(:valid_wager, false)
           end)
 
