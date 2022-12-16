@@ -11,6 +11,8 @@ defmodule BlackJack.Game do
     Player
   }
 
+  @ten_values ["10", "jack", "queen", "king"]
+
   defstruct [
     :state,
     :minimum_wager,
@@ -86,7 +88,7 @@ defmodule BlackJack.Game do
     game
   end
 
-  def deal(game) do
+  def deal(game, fun) do
     game_with_hands =
       game.players
       |> Enum.reduce(Map.from_struct(game), fn
@@ -110,26 +112,52 @@ defmodule BlackJack.Game do
           )
           |> Map.put(:deck, deck)
       end)
-      |> Map.put(:state, :in_progress)
 
-    game_with_active_player =
-      Map.put(game_with_hands, :active_player, next_active_player_id(game_with_hands.players))
+    {dealer_hand, deck} = Hand.deal(game_with_hands.deck, :dealer)
 
-    {dealer_hand, deck} = Hand.deal(game_with_active_player.deck, :dealer)
-
-    game_with_dealer =
-      game_with_active_player
+    game_with_dealer_hand =
+      game_with_hands
       |> Map.put(:dealer_hand, dealer_hand)
       |> Map.put(:deck, deck)
 
-    first_hand_id =
-      game_with_dealer.players
-      |> Map.get(game_with_dealer.active_player)
-      |> next_active_hand_id()
+    handle_insurance(game_with_dealer_hand, fun)
+  end
 
-    game_with_dealer
-    |> Map.put(:active_hand, first_hand_id)
-    |> Game.new!()
+  def handle_insurance(game, fun) do
+    IO.inspect(game.dealer_hand)
+    IO.inspect(game.state)
+
+    case game do
+      %{dealer_hand: %{cards: [%{value: "ace"}, %{value: value}]}, state: :taking_bets}
+      when value in @ten_values ->
+        payout(game, fun)
+
+      %{dealer_hand: %{cards: [_face_down, %{face_down: false, value: "ace"}]}, state: :taking_bets} ->
+        fun.()
+        Map.put(game, :state, :insurance)
+
+      %{dealer_hand: %{cards: [%{value: value}, %{value: "ace"}]}, state: :insurance}
+      when value in @ten_values ->
+        payout(game, fun)
+
+      %{state: state} when state in [:taking_bets, :insurance] ->
+        game_with_active_player =
+          Map.put(
+            game,
+            :active_player,
+            next_active_player_id(game.players)
+          )
+
+        first_hand_id =
+          game_with_active_player.players
+          |> Map.get(game_with_active_player.active_player)
+          |> next_active_hand_id()
+
+        game_with_active_player
+        |> Map.put(:active_hand, first_hand_id)
+        |> Map.put(:state, :in_progress)
+        |> Game.new!()
+    end
   end
 
   def payout(game, fun) when is_nil(game.active_player) do
@@ -212,7 +240,7 @@ defmodule BlackJack.Game do
   end
 
   # if deck < 30% then, clear discard, reset deck
-  # change it so that if dealer has 21 at start of game go to next game
+  # change it so that if dealer has 21 at start of game go to next game (needs to be checked when dealer is showing 10, j, q, k, a. Inusrance options available on ace)
   # blackjack doesnt immediately pay out and it should pay out 1.5x bet
 
   def play_dealer(game) when is_nil(game.active_player) do
@@ -233,8 +261,9 @@ defmodule BlackJack.Game do
   def play_dealer(game), do: game
 
   def double_down(game) do
-    {deck, hand} =
-      Hand.double_down(game.deck, game.players[game.active_player].hands[game.active_hand])
+    old_deck = game.deck
+    old_hand = game.players[game.active_player].hands[game.active_hand]
+    {deck, hand} = Hand.double_down(old_deck, old_hand)
 
     game
     |> Map.put(:deck, deck)
@@ -242,8 +271,10 @@ defmodule BlackJack.Game do
     |> update_in([:players, game.active_player], fn player ->
       player
       |> Map.from_struct()
-      |> Map.update!(:credits, & (&1 - hand.wager))
-      |> update_in([:hands, game.active_hand], fn _ -> Map.put(hand, :wager, hand.wager*2) end)
+      |> Map.update!(:credits, &(&1 - hand.wager))
+      |> update_in([:hands, game.active_hand], fn _ ->
+        Map.put(hand, :wager, hand.wager * 2)
+      end)
       |> Player.new!()
     end)
     |> new!()
@@ -364,6 +395,7 @@ defmodule BlackJack.Game do
           end)
         end)
     end)
+
     game
   end
 
