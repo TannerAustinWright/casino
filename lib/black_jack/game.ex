@@ -5,7 +5,7 @@ defmodule BlackJack.Game do
     taking_bets   -   players are in the server, timeout has been set to start game
   """
   alias BlackJack.{
-    Game,
+    # Game,
     Deck,
     Hand,
     Player
@@ -169,10 +169,10 @@ defmodule BlackJack.Game do
       |> Map.update!(:credits, fn credits ->
         cond do
           wants_insurance and not player.insurance ->
-            credits - hand.wager / 2
+            credits - div(hand.wager, 2)
 
           not wants_insurance and player.insurance ->
-            credits + hand.wager / 2
+            credits + div(hand.wager, 2)
 
           true ->
             credits
@@ -212,7 +212,6 @@ defmodule BlackJack.Game do
                     do: credits + insurance_payout,
                     else: credits
                 end)
-                |> IO.inspect(label: SUCKMYCOCK)
                 |> Map.update!(:hands, fn hands ->
                   face_up_hand =
                     update_in(player_hand.cards, fn cards ->
@@ -245,8 +244,8 @@ defmodule BlackJack.Game do
       |> Map.put(:state, :shuffling)
 
     fun.()
+
     new_state
-    |> IO.inspect()
   end
 
   def payout(game, _fun), do: game
@@ -280,7 +279,7 @@ defmodule BlackJack.Game do
   def play_dealer(game) when is_nil(game.active_player) do
     case game.dealer_hand.value do
       # dealer hits on soft 17
-      [greater_value, _lesser_value] when greater_value <= 17 ->
+      [greater_value | _lesser_value] when greater_value <= 17 ->
         hit_dealer(game)
 
       # dealer hits on 16
@@ -325,7 +324,7 @@ defmodule BlackJack.Game do
 
     game_with_deck = Map.put(game, :deck, deck)
 
-    put_in(game.players[game.active_player].hands[game.active_hand], hand)
+    put_in(game_with_deck.players[game.active_player].hands[game.active_hand], hand)
     |> update_active_player()
   end
 
