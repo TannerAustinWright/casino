@@ -1,4 +1,5 @@
 defmodule BlackJack.Card do
+  @derive Jason.Encoder
   defstruct [
     :suit,
     :value,

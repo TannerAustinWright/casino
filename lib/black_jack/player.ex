@@ -1,4 +1,6 @@
 defmodule BlackJack.Player do
+  @derive Jason.Encoder
+
   defstruct [
     :name,
     :joined,

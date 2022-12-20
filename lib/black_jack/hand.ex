@@ -4,6 +4,7 @@ defmodule BlackJack.Hand do
     Card
   }
 
+  @derive Jason.Encoder
   defstruct [
     :cards,
     :id,

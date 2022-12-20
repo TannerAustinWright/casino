@@ -19,6 +19,21 @@ defmodule CasinoWeb.Controllers.Player do
   end
 
   def post(conn = %{body_params: %{"name" => name}}, _opts) do
-    json(conn, Map.from_struct(Casino.create_player(name)))
+    name
+    |> Casino.create_player()
+    |> Map.from_struct()
+    |> Map.drop([:hands, :insurance, :ready, :valid_wager])
+    |> (respond(conn)).()
+  end
+
+  def post(conn, _info) do
+    conn
+    |> resp(400, "missing information")
+  end
+
+  defp respond(conn) do
+    fn response ->
+      json(conn, response)
+    end
   end
 end

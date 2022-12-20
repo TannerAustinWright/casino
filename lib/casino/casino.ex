@@ -25,8 +25,8 @@ defmodule Casino do
   def buy_insurance(player_id, wants_insurance),
     do: GenServer.cast(Server, {:buy_insurance, player_id, wants_insurance})
 
-  def split(player_id, split),
-    do: GenServer.cast(Server, {:split, player_id, split})
+  def split(player_id),
+    do: GenServer.cast(Server, {:split, player_id})
 
   def hit(player_id),
     do: GenServer.cast(Server, {:hit, player_id})

@@ -4,7 +4,7 @@ defmodule CasinoWeb.GameChannel do
   require Logger
 
   def join("game:lobby", _message, socket) do
-    Casino.join(socket.assigns.user.id)
+    Casino.join(socket.assigns.player.id)
     {:ok, socket}
   end
 

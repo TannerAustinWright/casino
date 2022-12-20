@@ -12,8 +12,7 @@ defmodule BlackJack.Game do
     Player
   }
 
-  @ten_values ["10", "jack", "queen", "king"]
-
+  @derive {Jason.Encoder, [except: [:timeout, :deck]]}
   defstruct [
     :state,
     :minimum_wager,
@@ -26,6 +25,7 @@ defmodule BlackJack.Game do
     :timeout
   ]
 
+  @ten_values ["10", "jack", "queen", "king"]
   @deck_count 3
 
   # @betting_states [
@@ -155,21 +155,21 @@ defmodule BlackJack.Game do
   end
 
   def update_active_player(game = %{active_player: nil, active_hand: nil}) do
-    game_with_new_active_player =
-      Map.put(game, :active_player, next_active_player_id(game.players))
+    next_player = next_active_player_id(game.players)
 
-    Map.put(
-      game_with_new_active_player,
-      :active_hand,
-      next_active_hand_id(
-        game_with_new_active_player.players[game_with_new_active_player.active_player]
-      )
-    )
+    game
+    |> Map.put(:active_player, next_player)
+    |> Map.put(:active_hand, next_active_hand_id(game.players[next_player]))
     |> check_new_hand_blackjack()
   end
 
   def update_active_player(game) do
     hand = game.players[game.active_player].hands[game.active_hand]
+
+    if hand === nil do
+      Logger.error("Tried to update active player while active hand was nil")
+      IO.inspect(game)
+    end
 
     # no active player, or hand
     cond do
@@ -299,6 +299,8 @@ defmodule BlackJack.Game do
           Enum.map(cards, &Map.put(&1, :face_down, false))
         end)
       end)
+      |> Map.put(:active_player, nil)
+      |> Map.put(:active_hand, nil)
       |> Map.put(:state, :shuffling)
 
     fun.()
@@ -385,6 +387,48 @@ defmodule BlackJack.Game do
     |> update_active_player()
   end
 
+  def split_hand(game = %{active_player: player, active_hand: hand}) do
+    hand_to_split = game.players[player].hands[hand]
+
+    if Hand.can_split?(hand_to_split) do
+      {first_draw, deck_after_one_draw} = Deck.draw(game.deck)
+      {second_draw, deck_after_two_draws} = Deck.draw(deck_after_one_draw)
+
+      update_in(game.players[player], fn player ->
+        player
+        |> Map.update!(:credits, &(&1 - hand_to_split.wager))
+        |> Map.update!(:hands, fn hands ->
+          [first_card, second_card] = hand_to_split.cards
+
+          new_hand =
+            Hand.new!(
+              wager: hand_to_split.wager,
+              cards: [first_card, first_draw]
+            )
+
+          existing_hand =
+            Hand.new!(
+              wager: hand_to_split.wager,
+              cards: [second_card, second_draw],
+              id: hand_to_split.id
+            )
+
+          hands
+          |> Map.put(existing_hand.id, existing_hand)
+          |> Map.put(new_hand.id, new_hand)
+        end)
+        |> IO.inspect(label: PlayerAfterSplit)
+      end)
+      |> Map.put(:deck, deck_after_two_draws)
+    else
+      Logger.error(
+        "Player #{player} tried to split when they did not have a hand with two cards of the same value."
+      )
+
+      game
+    end
+  end
+
   def next_active_player_id(players) do
     players
     |> Enum.filter(&(not is_nil(next_active_hand_id(elem(&1, 1)))))
@@ -417,35 +461,37 @@ defmodule BlackJack.Game do
   end
 
   def show(game) when not is_nil(game.dealer_hand) do
-    IO.inspect(state: game.state)
-    IO.inspect("Dealer:")
+    IO.puts("Dealer:")
 
     if not Enum.any?(game.dealer_hand.cards, & &1.face_down),
-      do: IO.inspect(BlackJack.Hand.max_value(game.dealer_hand))
+      do: IO.puts("#{BlackJack.Hand.max_value(game.dealer_hand)}")
 
     Enum.each(game.dealer_hand.cards, fn
       %{value: value, face_down: false} ->
-        IO.inspect(" - #{value}")
+        IO.puts(" - #{value}")
 
       _ ->
-        IO.inspect("*****")
+        IO.puts("*****")
     end)
 
     Enum.each(game.players, fn
       {_player_id, player = %{valid_wager: true}} ->
-        active_indicator = if game.active_player === player.id, do: ">>> ", else: ""
+        active_indicator = if game.active_player === player.id, do: "<<<<", else: ""
 
-        IO.inspect("#{active_indicator}#{player.name} (#{player.credits}):")
+        IO.puts("#{player.name} (#{player.credits}) #{active_indicator}")
 
         Enum.each(player.hands, fn {_hand_id, hand = %{cards: cards}} ->
-          if not Enum.any?(cards, & &1.face_down), do: IO.inspect(BlackJack.Hand.max_value(hand))
+          active_indicator = if game.active_hand === hand.id, do: "<<<<", else: ""
+
+          if not Enum.any?(cards, & &1.face_down),
+            do: IO.puts("#{BlackJack.Hand.max_value(hand)} #{active_indicator}")
 
           Enum.each(cards, fn
             %{value: value, face_down: false} ->
-              IO.inspect(" - #{value}")
+              IO.puts(" - #{value}")
 
             _ ->
-              IO.inspect("*****")
+              IO.puts("*****")
           end)
         end)
 
@@ -453,13 +499,13 @@ defmodule BlackJack.Game do
         nil
     end)
 
-    if game.state === :insurance, do: IO.inspect("Would you like to buy insurance?")
+    if game.state === :insurance, do: IO.puts("Would you like to buy insurance?")
 
     game
   end
 
   def show(game) when game.state === :taking_bets do
-    IO.inspect("Place your bets. $#{game.minimum_wager} minimum wager.")
+    IO.puts("Place your bets. $#{game.minimum_wager} minimum wager.")
     game
   end
 

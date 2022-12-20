@@ -2,17 +2,22 @@ defmodule Casino.Server do
   @moduledoc """
   The server layer for the casino module.
 
+  If everyone busts, then dealer should not play
+  theres an intermittent random error on assigning a new player.
+
   iex --name casino -S  mix phx.server
   iex --name tanner
 
     import Casino
     tid = "tanner" |> create_player() |> Map.get(:id)
     join(tid)
-    bet(tid, 200)
+    bet(tid, 100)
 
     fid = "frank" |> create_player() |> Map.get(:id)
     join(fid)
-    bet(fid, 500)
+    bet(fid, 100)
+
+    bet(tid, 100); bet(fid, 100)
 
     jid = "jordan" |> create_player() |> Map.get(:id)
     join(jid)
@@ -112,6 +117,7 @@ defmodule Casino.Server do
       :timeout,
       send_after(seconds(@betting_time_seconds), :timeout)
     )
+    |> broadcast()
     |> no_reply()
   end
 
@@ -230,6 +236,7 @@ defmodule Casino.Server do
     updated_players = Map.put(game.players, player_id, player_with_updated_wager)
 
     Map.put(game, :players, updated_players)
+    |> broadcast()
     |> no_reply()
   end
 
@@ -311,6 +318,10 @@ defmodule Casino.Server do
     no_reply(state)
   end
 
-  # defp broadcast(game), do: CasinoWeb.Endpoint.broadcast("game:lobby", "state_update", game)
-  def broadcast(game), do: BlackJack.Game.show(game)
+  defp broadcast(game) do
+    CasinoWeb.Endpoint.broadcast("game:lobby", "state_update", game)
+    BlackJack.Game.show(game)
+  end
+
+  # def broadcast(game), do: BlackJack.Game.show(game)
 end
