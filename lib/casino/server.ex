@@ -2,19 +2,25 @@ defmodule Casino.Server do
   @moduledoc """
   The server layer for the casino module.
 
+  iex --name casino -S  mix phx.server
+  iex --name tanner
+
     import Casino
-    import BlackJack.Game
     tid = "tanner" |> create_player() |> Map.get(:id)
     join(tid)
-    bet(tid, 20)
-    buy_insurance(tid, true)
+    bet(tid, 200)
 
     fid = "frank" |> create_player() |> Map.get(:id)
     join(fid)
-    bet(fid, 100)
+    bet(fid, 500)
+
+    jid = "jordan" |> create_player() |> Map.get(:id)
+    join(jid)
+    bet(jid, 250)
+
     vid = "talin" |> create_player() |> Map.get(:id)
     join(vid)
-    bet(vid, 200)
+    bet(vid, 500)
 
 
    print_cards get_state
@@ -124,8 +130,13 @@ defmodule Casino.Server do
     |> no_reply()
   end
 
-  def handle_cast({:hit, player_id}, game) do
+  def handle_cast({:hit, player_id}, game) when game.state === :in_progress do
     Logger.error("Player #{player_id} tried to hit when it was not their turn.")
+    no_reply(game)
+  end
+
+  def handle_cast({:hit, player_id}, game) do
+    Logger.error("Player #{player_id} tried to hit during game state: #{game.state}")
     no_reply(game)
   end
 
@@ -141,36 +152,58 @@ defmodule Casino.Server do
   end
 
   def handle_cast({:stand, player_id}, game) do
-    Logger.error("Player #{game.players[player_id].name} tried to stand when it was not their turn.")
+    Logger.error(
+      "Player #{game.players[player_id].name} tried to stand when it was not their turn."
+    )
+
     no_reply(game)
   end
 
   def handle_cast({:double_down, player_id}, game) when player_id === game.active_player do
-
     hand_length = length(game.players[game.active_player].hands[game.active_hand].cards)
 
     if hand_length === 2 do
-        game
-        |> Game.double_down()
-        |> Game.play_dealer()
-        |> Game.payout(fn ->
-          send_after(seconds(@betting_time_seconds), :timeout)
-        end)
-        |> broadcast()
-        |> no_reply()
+      game
+      |> Game.double_down()
+      |> Game.play_dealer()
+      |> Game.payout(fn ->
+        send_after(seconds(@betting_time_seconds), :timeout)
+      end)
+      |> broadcast()
+      |> no_reply()
     else
-        Logger.error("Player #{game.players[player_id].name} tried to double down after hitting.")
-        no_reply(game)
+      Logger.error("Player #{game.players[player_id].name} tried to double down after hitting.")
+      no_reply(game)
     end
   end
 
   def handle_cast({:double_down, player_id}, game) do
-    Logger.error("Player #{game.players[player_id].name} tried to double down when it was not their turn.")
+    Logger.error(
+      "Player #{game.players[player_id].name} tried to double down when it was not their turn."
+    )
+
     no_reply(game)
   end
 
-  def handle_cast({:split, _player_id, _split}, game) do
+  def handle_cast({:split, player_id}, game) when player_id === game.active_player do
     game
+    |> Game.split_hand()
+    |> Game.play_dealer()
+    |> Game.payout(fn ->
+      send_after(seconds(@betting_time_seconds), :timeout)
+    end)
+    |> broadcast()
+    |> no_reply()
+  end
+
+  def handle_cast({:split, player_id}, game) when game.state === :in_progress do
+    Logger.error("Player #{player_id} tried to split when it was not their turn.")
+    no_reply(game)
+  end
+
+  def handle_cast({:split, player_id}, game) do
+    Logger.error("Player #{player_id} tried to split during game state: #{game.state}")
+    no_reply(game)
   end
 
   ###
@@ -200,7 +233,8 @@ defmodule Casino.Server do
     |> no_reply()
   end
 
-  def handle_cast({:buy_insurance, player_id, wants_insurance}, game) when game.state === :insurance do
+  def handle_cast({:buy_insurance, player_id, wants_insurance}, game)
+      when game.state === :insurance do
     game
     |> Game.bet_insurance(player_id, wants_insurance)
     |> broadcast()
@@ -237,7 +271,7 @@ defmodule Casino.Server do
     |> no_reply()
   end
 
-  def handle_info(:timeout, game) when game.state ===:taking_bets do
+  def handle_info(:timeout, game) when game.state === :taking_bets do
     # game
     # |> Game.handle_timeout()
     # |> broadcast()
@@ -271,7 +305,6 @@ defmodule Casino.Server do
     |> no_reply()
   end
 
-  # catch all
   def handle_info(message, state) do
     Logger.warn("Received unhandled info: #{message}")
 
@@ -280,22 +313,4 @@ defmodule Casino.Server do
 
   # defp broadcast(game), do: CasinoWeb.Endpoint.broadcast("game:lobby", "state_update", game)
   def broadcast(game), do: BlackJack.Game.show(game)
-
-  ###
-  # utility
-  #
-
-  def count_down(ms) do
-    Process.spawn(
-      fn ->
-        Enum.each(div(ms, 1_000)..0, fn count ->
-          IO.inspect(count)
-          :timer.sleep(seconds(1))
-        end)
-      end,
-      [:monitor]
-    )
-
-    ms
-  end
 end

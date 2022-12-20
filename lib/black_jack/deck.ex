@@ -1,4 +1,5 @@
 defmodule BlackJack.Deck do
+  require Logger
   alias BlackJack.Card
 
   @deck Enum.flat_map(Card.suits(), fn suit ->
@@ -8,5 +9,10 @@ defmodule BlackJack.Deck do
   def new(number_of_decks),
     do: Enum.shuffle(Enum.flat_map(1..number_of_decks, fn _num -> @deck end))
 
-  def draw(deck), do: List.pop_at(deck, Enum.random(0..(length(deck) - 1)))
+  def draw([top_card | []]) do
+    Logger.warn("Drew last card in the deck")
+    {top_card, []}
+  end
+
+  def draw([top_card | rest_of_deck]), do: {top_card, rest_of_deck}
 end

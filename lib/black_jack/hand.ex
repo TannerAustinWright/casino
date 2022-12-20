@@ -82,6 +82,9 @@ defmodule BlackJack.Hand do
     true
   end
 
+  def can_split?(%{cards: [%{value: value1}, %{value: value2}]}) when value1 === value2, do: true
+  def can_split?(_hand), do: false
+
   def bust?(%{value: []}), do: true
 
   def bust?(_hand), do: false
@@ -109,6 +112,9 @@ defmodule BlackJack.Hand do
 
     {new_deck, new_hand}
   end
+
+  def max_value(%{value: []}), do: "bust"
+  def max_value(%{value: [max_value | _rest]}), do: max_value
 
   def double_down(deck, hand) do
     {card, new_deck} = Deck.draw(deck)
