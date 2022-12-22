@@ -12,7 +12,7 @@ defmodule BlackJack.Game do
     Player
   }
 
-  @derive {Jason.Encoder, [except: [:timeout, :deck]]}
+  @derive {Jason.Encoder, [except: [:betting_timeout, :deck]]}
   defstruct [
     :state,
     :minimum_wager,
@@ -22,7 +22,7 @@ defmodule BlackJack.Game do
     :players,
     :next_position,
     :deck,
-    :timeout
+    :betting_timeout
   ]
 
   @ten_values ["10", "jack", "queen", "king"]
@@ -76,22 +76,82 @@ defmodule BlackJack.Game do
     game.players[player_id]
   end
 
-  def add_player(game, player) do
-    update_in(game.players[player.id], fn
-      nil ->
-        Map.put(player, :position, game.next_position)
+  def upsert_player(game, player_params = %{id: player_id}) do
+    game_after_upsert =
+      update_in(game.players[player_id], fn
+        nil ->
+          player_params
+          |> Player.new!()
+          |> Map.put(:position, game.next_position)
 
-      other ->
-        other
-    end)
-    |> Map.update!(:next_position, &(&1 + 1))
+        existing_player ->
+          Map.merge(existing_player, player_params)
+      end)
+
+    new_player = game_after_upsert.players[player_id]
+
+    if map_size(game.players) !== map_size(game_after_upsert.players) do
+      {new_player, Map.update!(game_after_upsert, :next_position, &(&1 + 1))}
+    else
+      {new_player, game_after_upsert}
+    end
   end
+
+  def upsert_player(game, player_params) do
+    new_player =
+      player_params
+      |> Player.new!()
+      |> Map.put(:position, game.next_position)
+
+    new_state =
+      put_in(game.players[new_player.id], new_player)
+      |> Map.update!(:next_position, &(&1 + 1))
+
+    {new_player, new_state}
+  end
+
+  def join(game, player_id) do
+    if player_id in Map.keys(game.players) do
+      game_with_player = put_in(game.players[player_id].joined, true)
+
+      update_in(game_with_player.state, fn
+        :idle ->
+          :taking_bets
+
+        other_state ->
+          other_state
+      end)
+    else
+      Logger.error("Player #{player_id} tried to join but does not exist.")
+      game
+    end
+  end
+
+  def set_wager(game, player_id, wager) do
+    previous_hand = Player.initial_hand(game.players[player_id])
+    previous_wager = previous_hand.wager
+
+    updated_player =
+      game.players[player_id]
+      |> Map.update!(:credits, &(&1 + previous_wager - wager))
+      |> Map.put(:valid_wager, wager >= game.minimum_wager)
+
+    modified_hand = put_in(previous_hand.wager, wager)
+    player_with_updated_wager = put_in(updated_player.hands, %{modified_hand.id => modified_hand})
+
+    updated_players = Map.put(game.players, player_id, player_with_updated_wager)
+
+    Map.put(game, :players, updated_players)
+  end
+
+  def active_player_can_double_down?(game = %{active_player: player, active_hand: hand}),
+    do: length(game.players[player].hands[hand].cards) === 2
 
   def set_player_ready(game, _player_id, _ready) do
     game
   end
 
-  def deal(game, fun) do
+  def deal(game) do
     game_with_hands =
       game.players
       |> Enum.reduce(game, fn
@@ -123,28 +183,27 @@ defmodule BlackJack.Game do
       |> Map.put(:dealer_hand, dealer_hand)
       |> Map.put(:deck, deck)
 
-    handle_insurance(game_with_dealer_hand, fun)
+    handle_insurance(game_with_dealer_hand)
   end
 
-  def handle_insurance(game, fun) do
+  def handle_insurance(game) do
     case game do
       # dealer has blackjack without insurance
       %{dealer_hand: %{cards: [%{value: "ace"}, %{value: value}]}, state: :taking_bets}
       when value in @ten_values ->
-        payout(game, fun)
+        payout(game)
 
       # dealer is showing ace so go to insurance
       %{
         dealer_hand: %{cards: [_face_down, %{face_down: false, value: "ace"}]},
         state: :taking_bets
       } ->
-        fun.()
         Map.put(game, :state, :insurance)
 
       # insurance has been collected and the dealer has blackjack
       %{dealer_hand: %{cards: [%{value: value}, %{value: "ace"}]}, state: :insurance}
       when value in @ten_values ->
-        payout(game, fun)
+        payout(game)
 
       # insurance may have been collected, and the dealer does not have blackjack
       %{state: state} when state in [:taking_bets, :insurance] ->
@@ -165,11 +224,6 @@ defmodule BlackJack.Game do
 
   def update_active_player(game) do
     hand = game.players[game.active_player].hands[game.active_hand]
-
-    if hand === nil do
-      Logger.error("Tried to update active player while active hand was nil")
-      IO.inspect(game)
-    end
 
     # no active player, or hand
     cond do
@@ -211,12 +265,20 @@ defmodule BlackJack.Game do
 
   def check_new_hand_blackjack(game = %{active_player: player, active_hand: hand}) do
     wager = game.players[player].hands[hand].wager
+    number_of_hands = map_size(game.players[player].hands)
 
-    if Hand.black_jack?(game.players[player].hands[hand]) do
+    Logger.warn(
+      "Checking if player has blackjack: #{
+        Hand.black_jack?(game.players[player].hands[hand]) and number_of_hands === 1
+      }"
+    )
+
+    if Hand.black_jack?(game.players[player].hands[hand]) and number_of_hands === 1 do
+      Logger.warn("Player had blackjack!")
+
       update_in(game.players[player], fn player ->
-        player
-        |> Map.update!(:credits, &(&1 + floor(wager * 2.5)))
-        |> Map.update!(:hands, &Map.delete(&1, hand))
+        put_in(player.hands[hand].wager, 0)
+        |> Map.update!(:credits, &(&1 + div(5 * wager, 2)))
       end)
       |> update_active_player()
     else
@@ -245,7 +307,7 @@ defmodule BlackJack.Game do
     end)
   end
 
-  def payout(game, fun) when is_nil(game.active_player) do
+  def payout(game) when is_nil(game.active_player) do
     new_state =
       Enum.reduce(game.players, game, fn
         {player_id, player = %{valid_wager: true}}, game ->
@@ -268,7 +330,8 @@ defmodule BlackJack.Game do
                     |> Map.update!(:credits, &(&1 + player_hand.wager))
                 end
                 |> Map.update!(:credits, fn credits ->
-                  insurance_payout = if player.insurance, do: 2 * player_hand.wager, else: 0
+                  insurance_payout =
+                    if player.insurance, do: div(3 * player_hand.wager, 2), else: 0
 
                   if Hand.black_jack?(game.dealer_hand),
                     do: credits + insurance_payout,
@@ -302,15 +365,20 @@ defmodule BlackJack.Game do
       |> Map.put(:active_player, nil)
       |> Map.put(:active_hand, nil)
       |> Map.put(:state, :shuffling)
-
-    fun.()
+      |> Map.update!(:deck, fn deck ->
+        if length(deck) / @deck_count * 52 < 0.3 do
+          Deck.new(@deck_count)
+        else
+          deck
+        end
+      end)
 
     new_state
   end
 
-  def payout(game, _fun), do: game
+  def payout(game), do: game
 
-  def clear_table(game, fun) when is_nil(game.active_player) do
+  def clear_table(game) when is_nil(game.active_player) do
     new_state =
       Enum.reduce(game.players, game, fn
         {player_id, %{valid_wager: true}}, game ->
@@ -328,7 +396,6 @@ defmodule BlackJack.Game do
       |> Map.put(:dealer_hand, nil)
       |> Map.put(:state, :taking_bets)
 
-    fun.()
     new_state
   end
 
@@ -336,23 +403,45 @@ defmodule BlackJack.Game do
   # blackjack doesnt immediately pay out and it should pay out 1.5x bet
 
   def play_dealer(game) when is_nil(game.active_player) do
+    any_players_remain? =
+      Enum.any?(game.players, fn {_player_id, player} ->
+        Enum.any?(
+          player.hands,
+          fn {_hand_id, hand} ->
+            not (Hand.bust?(hand) or (Hand.black_jack?(hand) and map_size(player.hands) === 1))
+          end
+        )
+      end)
+
+    # if all players have all busted hands and blackjacks with one hand
+
     case game.dealer_hand.value do
       # dealer hits on soft 17
-      [greater_value | _lesser_value] when greater_value <= 17 ->
+      [greater_value | _lesser_value] when greater_value <= 17 and any_players_remain? ->
         hit_dealer(game)
 
       # dealer hits on 16
-      [value] when value < 17 ->
+      [value] when value < 17 and any_players_remain? ->
         hit_dealer(game)
 
       _dealer_stands ->
         update_in(game.dealer_hand.complete, fn _ -> true end)
+        |> payout()
     end
   end
 
   def play_dealer(game), do: game
 
-  def double_down(game) do
+  def hit_dealer(game) do
+    {new_deck, new_dealer_hand} = Hand.hit(game.deck, game.dealer_hand)
+
+    game
+    |> Map.put(:deck, new_deck)
+    |> Map.put(:dealer_hand, new_dealer_hand)
+    |> play_dealer()
+  end
+
+  def double_down_active_player(game) do
     old_deck = game.deck
     old_hand = game.players[game.active_player].hands[game.active_hand]
     {deck, hand} = Hand.double_down(old_deck, old_hand)
@@ -367,66 +456,61 @@ defmodule BlackJack.Game do
       end)
     end)
     |> update_active_player()
-  end
-
-  def hit_dealer(game) do
-    {new_deck, new_dealer_hand} = Hand.hit(game.deck, game.dealer_hand)
-
-    game
-    |> Map.put(:deck, new_deck)
-    |> Map.put(:dealer_hand, new_dealer_hand)
     |> play_dealer()
   end
 
-  def hit_player(game) do
+  def hit_active_player(game) do
     {deck, hand} = Hand.hit(game.deck, game.players[game.active_player].hands[game.active_hand])
 
     game_with_deck = Map.put(game, :deck, deck)
 
     put_in(game_with_deck.players[game.active_player].hands[game.active_hand], hand)
     |> update_active_player()
+    |> play_dealer()
   end
 
-  def split_hand(game = %{active_player: player, active_hand: hand}) do
+  def is_playing?(game, player_id), do: game.players[player_id].valid_wager
+
+  def active_player_can_split?(game = %{active_player: player, active_hand: hand}),
+    do: Hand.can_split?(game.players[player].hands[hand])
+
+  def split_active_player(game = %{active_player: player, active_hand: hand}) do
     hand_to_split = game.players[player].hands[hand]
 
-    if Hand.can_split?(hand_to_split) do
-      {first_draw, deck_after_one_draw} = Deck.draw(game.deck)
-      {second_draw, deck_after_two_draws} = Deck.draw(deck_after_one_draw)
+    {first_draw, deck_after_one_draw} = Deck.draw(game.deck)
+    {second_draw, deck_after_two_draws} = Deck.draw(deck_after_one_draw)
 
-      update_in(game.players[player], fn player ->
-        player
-        |> Map.update!(:credits, &(&1 - hand_to_split.wager))
-        |> Map.update!(:hands, fn hands ->
-          [first_card, second_card] = hand_to_split.cards
+    update_in(game.players[player], fn player ->
+      player
+      |> Map.update!(:credits, &(&1 - hand_to_split.wager))
+      |> Map.update!(:hands, fn hands ->
+        [first_card, second_card] = hand_to_split.cards
 
-          new_hand =
-            Hand.new!(
-              wager: hand_to_split.wager,
-              cards: [first_card, first_draw]
-            )
+        is_ace? = first_card.value === "ace"
 
-          existing_hand =
-            Hand.new!(
-              wager: hand_to_split.wager,
-              cards: [second_card, second_draw],
-              id: hand_to_split.id
-            )
+        new_hand =
+          Hand.new!(
+            wager: hand_to_split.wager,
+            cards: [first_card, first_draw],
+            complete: is_ace?
+          )
 
-          hands
-          |> Map.put(existing_hand.id, existing_hand)
-          |> Map.put(new_hand.id, new_hand)
-        end)
-        |> IO.inspect(label: PlayerAfterSplit)
+        existing_hand =
+          Hand.new!(
+            wager: hand_to_split.wager,
+            cards: [second_card, second_draw],
+            id: hand_to_split.id,
+            complete: is_ace?
+          )
+
+        hands
+        |> Map.put(existing_hand.id, existing_hand)
+        |> Map.put(new_hand.id, new_hand)
       end)
-      |> Map.put(:deck, deck_after_two_draws)
-    else
-      Logger.error(
-        "Player #{player} tried to split when they did not have a hand with two cards of the same value."
-      )
-
-      game
-    end
+    end)
+    |> Map.put(:deck, deck_after_two_draws)
+    |> update_active_player()
+    |> play_dealer()
   end
 
   def next_active_player_id(players) do
@@ -455,9 +539,10 @@ defmodule BlackJack.Game do
     end
   end
 
-  def player_stand(game) do
+  def stand_active_player(game) do
     put_in(game.players[game.active_player].hands[game.active_hand].complete, true)
     |> update_active_player()
+    |> play_dealer()
   end
 
   def show(game) when not is_nil(game.dealer_hand) do

@@ -18,9 +18,10 @@ defmodule CasinoWeb.Controllers.Player do
     end
   end
 
-  def post(conn = %{body_params: %{"name" => name}}, _opts) do
-    name
-    |> Casino.create_player()
+  def post(conn = %{body_params: player_params}, _opts) do
+    player_params
+    |> Map.new(fn {key, value} -> {String.to_existing_atom(key), value} end)
+    |> Casino.upsert_player()
     |> Map.from_struct()
     |> Map.drop([:hands, :insurance, :ready, :valid_wager])
     |> (respond(conn)).()

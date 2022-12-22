@@ -7,8 +7,8 @@ defmodule Casino do
   def get_player(player_id),
     do: GenServer.call(Server, {:get_player, player_id})
 
-  def create_player(name),
-    do: GenServer.call(Server, {:create_player, name})
+  def upsert_player(player_params),
+    do: GenServer.call(Server, {:upsert_player, player_params})
 
   def get_state(),
     do: GenServer.call(Server, :get_state)

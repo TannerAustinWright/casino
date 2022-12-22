@@ -37,8 +37,16 @@ defmodule BlackJack.Hand do
 
     params_with_hand_value = Keyword.merge(params, value: hand_value)
 
-    struct!(__MODULE__, Keyword.merge(@defaults, params_with_hand_value))
+    __MODULE__
+    |> struct!(Keyword.merge(@defaults, params_with_hand_value))
+    |> complete()
   end
+
+  def complete(busted_hand = %{value: []}), do: Map.put(busted_hand, :complete, true)
+
+  def complete(max_hand = %{value: [21 | _other]}), do: Map.put(max_hand, :complete, true)
+
+  def complete(hand), do: hand
 
   def deal(deck, dealer_or_player \\ :player)
 
@@ -100,16 +108,7 @@ defmodule BlackJack.Hand do
       hand
       |> Map.update!(:cards, &[card | &1])
       |> Map.update!(:value, &Card.add(&1, card))
-      |> case do
-        busted_hand = %{value: []} ->
-          Map.put(busted_hand, :complete, true)
-
-        max_hand = %{value: [21 | _other]} ->
-          Map.put(max_hand, :complete, true)
-
-        other_hand ->
-          other_hand
-      end
+      |> complete()
 
     {new_deck, new_hand}
   end

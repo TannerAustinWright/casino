@@ -9,45 +9,45 @@ defmodule CasinoWeb.GameChannel do
   end
 
   # broadcast!(socket, "out_server_socket", params)
-  def handle_in("place_bet", %{"ready" => _ready, "wager" => _wager}, socket) do
-    # user_id = socket.assigns.user.id
-    # Casino.place_bet(user_id, wager, ready)
+  def handle_in("bet", %{"wager" => wager}, socket) do
+    player_id = socket.assigns.player.id
+    Casino.bet(player_id, wager)
     {:noreply, socket}
   end
 
-  def handle_in("buy_insurance", %{"ready" => _ready, "wager" => _wager}, socket) do
-    # user_id = socket.assigns.user.id
-    # Casino.buy_insurance(user_id, wager, ready)
+  def handle_in("insurance", %{"insurance" => insurance}, socket) do
+    player_id = socket.assigns.player.id
+    Casino.buy_insurance(player_id, insurance)
     {:noreply, socket}
   end
 
-  def handle_in("split", %{"split" => _split}, socket) do
-    # user_id = socket.assigns.user.id
-    # Casino.split(user_id, split)
+  def handle_in("split", _, socket) do
+    player_id = socket.assigns.player.id
+    Casino.split(player_id)
     {:noreply, socket}
   end
 
   def handle_in("hit", _, socket) do
-    # user_id = socket.assigns.user.id
-    # Casino.hit(user_id)
+    player_id = socket.assigns.player.id
+    Casino.hit(player_id)
     {:noreply, socket}
   end
 
   def handle_in("stand", _, socket) do
-    # user_id = socket.assigns.user.id
-    # Casino.stand(user_id)
+    player_id = socket.assigns.player.id
+    Casino.stand(player_id)
     {:noreply, socket}
   end
 
-  def handle_in("double_down", _, socket) do
-    # user_id = socket.assigns.user.id
-    # Casino.double_down(user_id)
+  def handle_in("double", _, socket) do
+    player_id = socket.assigns.player.id
+    Casino.double_down(player_id)
     {:noreply, socket}
   end
 
   def handle_in("surrender", _, socket) do
-    # user_id = socket.assigns.user.id
-    # Casino.surrender(user_id)
+    # player_id = socket.assigns.player.id
+    # Casino.surrender(player_id)
     {:noreply, socket}
   end
 
